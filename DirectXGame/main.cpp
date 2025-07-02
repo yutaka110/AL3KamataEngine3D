@@ -11,6 +11,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	//ゲームシーンのインスタンスを生成
 	GameScene* gameScene = new GameScene();
 
+	//ImGuiManagerインスタンスの取得
+	ImGuiManager* imguiManager = ImGuiManager::GetInstance();
+
 	//ゲームシーンの初期化
 	gameScene->Initialize();
 
@@ -21,15 +24,23 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			break;
 		}
 
+		//Imgui受付開始
+		imguiManager->Begin();
+
 		//ゲームシーンの更新処理
 		gameScene->Update();
 
+		//Imgui受付終了
+		imguiManager->End();
 
 		//描画開始
 		dxCommon->PreDraw();
 
 		//ゲームシーンの描画処理
 		gameScene->Draw();
+
+		//ImGui描画
+		imguiManager->Draw();
 
 		//描画終了
 		dxCommon->PostDraw();
