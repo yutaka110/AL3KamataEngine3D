@@ -1,6 +1,10 @@
 #pragma once
 #include "KamataEngine.h"
 #include "Player.h"
+#include "Skydome.h"
+// 先頭のインクルード付近に追加
+#include <vector>
+
 //ゲームシーン
 class GameScene
 {
@@ -31,6 +35,10 @@ class GameScene
 
 		//カメラ
 	    KamataEngine::Camera camera_;
+
+		// 3Dモデル
+	    KamataEngine::Model* modelSkydome_ = nullptr;
+
 	private:
 
 		//テクスチャハンドル
@@ -45,5 +53,9 @@ class GameScene
 		// 自動キャラ
 	    Player* player_ = nullptr;
 	    
-	
+	  // 2次元配列形式（行×列）
+	    std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
+
+
+		KamataEngine::Model* modelBlock_ = nullptr;
 };
