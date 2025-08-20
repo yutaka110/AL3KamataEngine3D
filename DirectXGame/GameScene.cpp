@@ -1,4 +1,6 @@
 #include "GameScene.h"
+#include "MapLoader.h"
+
 using namespace KamataEngine;
 
 namespace { // ---- local helpers ----
@@ -100,6 +102,8 @@ void GameScene::Initialize() {
 	// ファイル名を指定してテクスチャを読み込む
 	textureHandle_ = TextureManager::Load("mario.jpg");
 
+	
+
 	// サウンドデータを読み込む
 	soundDataHandle_ = Audio::GetInstance()->LoadWave("mokugyo.wav");
 
@@ -122,40 +126,48 @@ void GameScene::Initialize() {
 
 	modelBlock_ = Model::CreateFromOBJ("cube", true);
 
-// 要素数
-	const uint32_t kNumBlockVertical = 10;   // 縦
-	const uint32_t kNumBlockHorizontal = 20; // 横
+// ---- ① CSV読み込み ----
+	worldTransformBlocks_.clear(); // 念のためクリア
+	mapData_.clear();
+	if (!MapLoader::LoadCsv("map.csv", mapData_)) {
+		OutputDebugStringA("[WARN] map.csv が読めないので空マップで起動します\n");
+		// 読めなかった場合のデフォルト（任意）
+		mapData_ = {
+		    {1, 0, 1, 0},
+            {0, 1, 0, 1}
+        };
+	}
+	MapLoader::NormalizeRect(mapData_);
 
-	// ブロック1個分のサイズ
-	const float kBlockWidth = 2.0f;
-	const float kBlockHeight = 2.0f;
+	// ---- ② マップからWTを生成 ----
+	// タイルの間隔や原点は好みで調整
+	const float kModelSize = 2.0f; // scale={2,2,2} 時の見かけ1マス（目安）
+	const float kGap = 0.6f;       // タイル間の隙間
+	const float pitchX = kModelSize + kGap;
+	const float pitchY = kModelSize + kGap;
+	const float originX = 20.0f; // 画面内オフセット
+	const float originY = 6.0f;
 
-	// 外側ベクタ（縦方向）を行数分リサイズ
-	worldTransformBlocks_.resize(kNumBlockVertical);
+	const uint32_t rows = (uint32_t)mapData_.size();
+	const uint32_t cols = rows ? (uint32_t)mapData_[0].size() : 0;
+	worldTransformBlocks_.assign(rows, std::vector<WorldTransform*>(cols, nullptr));
 
-	for (uint32_t y = 0; y < kNumBlockVertical; ++y) {
+	for (uint32_t y = 0; y < rows; ++y) {
+		for (uint32_t x = 0; x < cols; ++x) {
+			if (mapData_[y][x] == 0)
+				continue; // 0 は “穴” → nullptr のまま
 
-		// 内側ベクタ（横方向）を列数分リサイズ
-		worldTransformBlocks_[y].resize(kNumBlockHorizontal);
-
-		for (uint32_t x = 0; x < kNumBlockHorizontal; ++x) {
-
-			// 1ブロック生成
 			auto* wt = new WorldTransform();
 			wt->Initialize();
-
-			// 配置座標（左上基準）
-			wt->translation_.x = x * kBlockWidth;
-			wt->translation_.y = y * kBlockHeight;
-			wt->translation_.z = 10.0f; // 見やすく前に出す
-			wt->scale_ = {2.0f, 2.0f, 2.0f};
-
+			wt->translation_.x = originX + x * pitchX;
+			wt->translation_.y = originY + y * pitchY;
+			wt->translation_.z = 10.0f;
+			wt->scale_ = {2.0f, 2.0f, 2.0f}; // 小さめにしたいときは 1.6f など
 			wt->TransferMatrix();
 
 			worldTransformBlocks_[y][x] = wt;
 		}
 	}
-
 
 
 

@@ -58,4 +58,6 @@ class GameScene
 
 
 		KamataEngine::Model* modelBlock_ = nullptr;
+
+		std::vector<std::vector<int>> mapData_;
 };

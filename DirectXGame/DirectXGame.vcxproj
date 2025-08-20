@@ -190,6 +190,7 @@
     <ClInclude Include="GameScene.h" />
     <ClInclude Include="MapLoader.h" />
     <ClInclude Include="player.h" />
+    <ClInclude Include="SceneID.h" />
     <ClInclude Include="Skydome.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
