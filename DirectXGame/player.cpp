@@ -34,13 +34,13 @@ void Player::Update() {
 	// 水平
 	const float ACCEL_X = 0.05f;         // 加速
 	const float BRAKE_X = 0.08f;         // 逆方向入力時の減速（強め）
-	const float MAX_SPEED_X = 0.80f;     // 最高速度
+	const float MAX_SPEED_X = 0.2f;     // 最高速度
 	const float FRICTION_GROUND = 0.88f; // 地上摩擦（指数減衰）
-	const float FRICTION_AIR = 0.96f;    // 空中摩擦（弱め）
+	const float FRICTION_AIR = 0.9f;    // 空中摩擦（弱め）
 	// 垂直（＋Yが下向き想定：重力は +、ジャンプは −）
 	const float GRAVITY = -0.25f;
 	const float JUMP_VELOCITY = 2.2f; // 上向きへ初速（yマイナス）
-	const float MAX_FALL_SPEED = -0.5f; // 最大落下速度
+	const float MAX_FALL_SPEED = -0.1f; // 最大落下速度
 	const int COYOTE_FRAMES = 6;       // 地面離れてもこの間はジャンプOK
 	const int JUMPBUF_FRAMES = 6;      // 押してから地面着地までの猶予
 
@@ -99,15 +99,15 @@ void Player::Update() {
 	worldTransform_.translation_.x += velocity_.x;
 	worldTransform_.translation_.y += velocity_.y;
 
-	// ======= 簡易・地面当たり判定（フロアYで止める）=======
-	if (worldTransform_.translation_.y <= groundY_) { // ＋Yが下向き想定
-		worldTransform_.translation_.y = groundY_;
-		if (velocity_.y < 0.0f)
-			velocity_.y = 0.0f;
-		grounded_ = true;
-	} else {
-		grounded_ = false;
-	}
+	//// ======= 簡易・地面当たり判定（フロアYで止める）=======
+	//if (worldTransform_.translation_.y <= groundY_) { // ＋Yが下向き想定
+	//	worldTransform_.translation_.y = groundY_;
+	//	if (velocity_.y < 0.0f)
+	//		velocity_.y = 0.0f;
+	//	grounded_ = true;
+	//} else {
+	//	grounded_ = false;
+	//}
 
 	// ======= 行列を組んで転送 =======
 	worldTransform_.matWorld_ = MakeAffine(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);

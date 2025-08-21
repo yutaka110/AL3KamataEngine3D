@@ -76,4 +76,9 @@ class GameScene
 
    // ★ タイトルシーンを中で所有（委譲用）
    TitleScene* title_ = nullptr;
+
+   // ▼ private: に追加
+   float tileOriginX_ = 0.0f, tileOriginY_ = 0.0f;
+   float tilePitchX_ = 1.0f, tilePitchY_ = 1.0f;
+   float tileHalfX_ = 0.8f, tileHalfY_ = 0.8f; // cube の scale から決める
 };

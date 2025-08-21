@@ -1,5 +1,6 @@
 #include "GameScene.h"
 #include "MapLoader.h"
+#include "TileCollision.h"
 
 using namespace KamataEngine;
 
@@ -188,7 +189,7 @@ void GameScene::Initialize() {
 			wt->translation_.x = originX + x * pitchX;
 			wt->translation_.y = originY + y * pitchY;
 			wt->translation_.z = 10.0f;
-			wt->scale_ = {1.6f, 1.6f, 1.6f}; // 小さめにしたいときは 1.6f など
+			wt->scale_ = {1.08f, 1.08f, 1.08f}; // 小さめにしたいときは 1.6f など
 			wt->TransferMatrix();
 
 			worldTransformBlocks_[y][x] = wt;
@@ -196,6 +197,23 @@ void GameScene::Initialize() {
 	}
 
 
+	// 既存の pitchX/pitchY/originX/originY を保持
+	tilePitchX_ = pitchX;
+	tilePitchY_ = pitchY;
+	tileOriginX_ = originX;
+	tileOriginY_ = originY;
+
+	// half は最初に見つかったブロックの scale から推定
+	for (uint32_t y = 0; y < rows; ++y) {
+		for (uint32_t x = 0; x < cols; ++x) {
+			if (worldTransformBlocks_[y][x]) {
+				tileHalfX_ = worldTransformBlocks_[y][x]->scale_.x * 0.5f;
+				tileHalfY_ = worldTransformBlocks_[y][x]->scale_.y * 0.5f;
+				y = rows;
+				break;
+			}
+		}
+	}
 
 
 	// デバッグカメラの生成
@@ -290,7 +308,15 @@ void GameScene::Update() {
 	// 自キャラの更新
 	player_->Update();
 
-	
+	// player_->Update(); の直後
+	TileField tf;
+	tf.originX = tileOriginX_;
+	tf.originY = tileOriginY_;
+	tf.pitchX = tilePitchX_;
+	tf.pitchY = tilePitchY_;
+	tf.grid = &mapData_;
+	ResolvePlayerVsTilemap(*player_, tf);
+
 
 #if defined(_DEBUG)
 	// ★ F1 でデバッグカメラ ON/OFF をトグル

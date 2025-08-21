@@ -8,7 +8,10 @@ class Player {
 	void Draw(const KamataEngine::Camera& cam);
 	// ▼ Player クラスの public: に1行追加
 	const KamataEngine::WorldTransform& GetWorldTransform() const { return worldTransform_; }
-
+	KamataEngine::WorldTransform& EditWorldTransform() { return worldTransform_; }
+	KamataEngine::Vector3& EditVelocity() { return velocity_; }
+	bool IsGrounded() const { return grounded_; }
+	void SetGrounded(bool g) { grounded_ = g; }
 	
 	private:
 	// ワールド変換データ
