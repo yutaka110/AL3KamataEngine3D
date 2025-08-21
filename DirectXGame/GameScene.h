@@ -37,7 +37,10 @@ class GameScene
 	    KamataEngine::Camera camera_;
 
 		// 3Dモデル
-	    KamataEngine::Model* modelSkydome_ = nullptr;
+	    //KamataEngine::Model* modelSkydome_ = nullptr;
+
+		Skydome* skydome_ = nullptr;
+
 
 	private:
 
@@ -60,4 +63,7 @@ class GameScene
 		KamataEngine::Model* modelBlock_ = nullptr;
 
 		std::vector<std::vector<int>> mapData_;
+
+		// ★ デバッグカメラ有効フラグ（デフォルトOFF）
+	    bool isDebugCameraActive_ = false;
 };

@@ -76,7 +76,32 @@ inline Matrix4x4 MakeAffine(const Vector3& s, const Vector3& r, const Vector3& t
 	Matrix4x4 T = MakeTranslate(t);
 	return Multiply(Multiply(S, R), T);
 }
+
+// --- row-vector × row-major の View から Eye を復元 ---
+inline KamataEngine::Vector3 ExtractEyeFromView(const KamataEngine::Matrix4x4& V) {
+	// V の上左3x3は R^T、最下段(3,0..2) は -eye * R^T
+	float Rt00 = V.m[0][0], Rt01 = V.m[0][1], Rt02 = V.m[0][2];
+	float Rt10 = V.m[1][0], Rt11 = V.m[1][1], Rt12 = V.m[1][2];
+	float Rt20 = V.m[2][0], Rt21 = V.m[2][1], Rt22 = V.m[2][2];
+
+	// R = (R^T)^T
+	float R00 = Rt00, R01 = Rt10, R02 = Rt20;
+	float R10 = Rt01, R11 = Rt11, R12 = Rt21;
+	float R20 = Rt02, R21 = Rt12, R22 = Rt22;
+
+	float tx = V.m[3][0], ty = V.m[3][1], tz = V.m[3][2]; // -eye * R^T
+
+	KamataEngine::Vector3 eye{};
+	eye.x = (-tx) * R00 + (-ty) * R01 + (-tz) * R02;
+	eye.y = (-tx) * R10 + (-ty) * R11 + (-tz) * R12;
+	eye.z = (-tx) * R20 + (-ty) * R21 + (-tz) * R22;
+	return eye;
+}
+
+
 } // namespace
+
+
 
 
 GameScene::~GameScene() {
@@ -85,8 +110,9 @@ GameScene::~GameScene() {
 	// 自キャラの解放
 	delete player_;
 	delete debugCamera_;
-	delete modelSkydome_;
+	//delete modelSkydome_;
 	delete modelBlock_;
+	delete skydome_;
 
 	// ブロックの WT を解放
 	for (std::vector<KamataEngine::WorldTransform*>& row : worldTransformBlocks_) {
@@ -174,12 +200,20 @@ void GameScene::Initialize() {
 
 	// デバッグカメラの生成
 	debugCamera_ = new DebugCamera(1280,720);
+	
 
 	// カメラの初期化
 	camera_.Initialize();
+	camera_.farZ = 20000.0f; // または SetFar(20000.0f);
+	camera_.nearZ = 0.1f;
+
 
 	// 3Dモデルの生成
-//	modelSkydome_ = Model::CreateFromOBJ("skydome", true);
+    //modelSkydome_ = Model::CreateFromOBJ("skydome", true);
+	// ★ スカイドーム生成（最初は原点固定でOK / 追従は後述）
+	skydome_ = new Skydome();
+	skydome_->Initialize("skydome", /*scale=*/1200.0f); // シーンに合わせて調整
+
 
 	// 自キャラの生成
 	player_ = new Player();
@@ -224,9 +258,44 @@ void GameScene::Update() {
 	// 自キャラの更新
 	player_->Update();
 
-	// デバッグカメラの更新
-	debugCamera_->Update();
+	
+
+#if defined(_DEBUG)
+	// ★ F1 でデバッグカメラ ON/OFF をトグル
+	if (Input::GetInstance()->TriggerKey(DIK_F1)) {
+		isDebugCameraActive_ = !isDebugCameraActive_;
+		OutputDebugStringA(isDebugCameraActive_ ? "[DBG] DebugCamera: ON\n" : "[DBG] DebugCamera: OFF\n");
+	}
+#endif
+
+	if (isDebugCameraActive_) {
+		// ★ デバッグカメラを更新して、その行列を描画用 camera_ へコピー
+		if (debugCamera_)
+			debugCamera_->Update();
+		
+		camera_.TransferMatrix(); // GPUへ反映（あなたの環境のAPIに合わせて）
+	} else {
+		// いつも通り通常カメラの更新
+		camera_.UpdateMatrix(); // もしくは TransferMatrix() 相当
+	}
+	
+	// アクティブな View 行列を取り出す
+	KamataEngine::Matrix4x4 V = (isDebugCameraActive_ && debugCamera_) ? debugCamera_->GetCamera().matView : camera_.matView;
+
+	// Eye を復元して追従させる
+	if (skydome_)
+		skydome_->UpdateFollowAt(ExtractEyeFromView(V));
+
+	debugCamera_->SetFarZ(camera_.farZ);   // 通常カメラと同じ遠方クリップ面
+	debugCamera_->SetNearZ(camera_.nearZ); // 通常カメラと同じ近接クリップ面
+
+
+
+	
 }
+
+	
+	
 
 void GameScene::Draw() {
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
@@ -241,21 +310,29 @@ void GameScene::Draw() {
 	// --------- 3D（モデル） ---------
 	Model::PreDraw(dxCommon->GetCommandList());
 
+	 // ★ デバッグONなら DebugCamera の Camera、OFFなら通常 camera_
+	const KamataEngine::Camera& activeCam = (isDebugCameraActive_ && debugCamera_) ? debugCamera_->GetCamera() : camera_;
+
+	// ★ 空を最初に描く（深度の上書きを避けるため）
+	if (skydome_) {
+		skydome_->Draw(activeCam);
+	}
+
 	for (auto& row : worldTransformBlocks_) { // 外側＝縦方向
 		for (auto* wt : row) {                // 内側＝横方向
 			if (!wt)
 				continue; // 穴あき対応
-			modelBlock_->Draw(*wt, camera_);
+			modelBlock_->Draw(*wt, activeCam);
 		}
 	}
 
-
+	
 	// 単体モデルの可視性テスト（必要なら一時的に有効化）
 	// model_->Draw(worldTransform_, debugCamera_->GetCamera(), textureHandle_);
 
-	if (player_) {
+	/*if (player_) {
 		player_->Draw();
-	}
+	}*/
 
 	Model::PostDraw();
 }
