@@ -4,6 +4,9 @@
 #include "Skydome.h"
 // 先頭のインクルード付近に追加
 #include <vector>
+#include "TitleScene.h"
+
+enum class ScenePhase { Title, Game };
 
 //ゲームシーン
 class GameScene
@@ -37,7 +40,10 @@ class GameScene
 	    KamataEngine::Camera camera_;
 
 		// 3Dモデル
-	    KamataEngine::Model* modelSkydome_ = nullptr;
+	    //KamataEngine::Model* modelSkydome_ = nullptr;
+
+		Skydome* skydome_ = nullptr;
+
 
 	private:
 
@@ -58,4 +64,21 @@ class GameScene
 
 
 		KamataEngine::Model* modelBlock_ = nullptr;
+
+		std::vector<std::vector<int>> mapData_;
+
+		// ★ デバッグカメラ有効フラグ（デフォルトOFF）
+	    bool isDebugCameraActive_ = false;
+
+
+		// ★ 現在のフェーズ（最初はタイトル）
+   ScenePhase phase_ = ScenePhase::Title;
+
+   // ★ タイトルシーンを中で所有（委譲用）
+   TitleScene* title_ = nullptr;
+
+   // ▼ private: に追加
+   float tileOriginX_ = 0.0f, tileOriginY_ = 0.0f;
+   float tilePitchX_ = 1.0f, tilePitchY_ = 1.0f;
+   float tileHalfX_ = 0.8f, tileHalfY_ = 0.8f; // cube の scale から決める
 };

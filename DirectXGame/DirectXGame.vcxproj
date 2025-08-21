@@ -108,7 +108,10 @@
   <ItemGroup>
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MapLoader.cpp" />
     <ClCompile Include="player.cpp" />
+    <ClCompile Include="TileCollision.cpp" />
+    <ClCompile Include="TitleScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Resources\shaders\TerrainPS.hlsl">
@@ -187,8 +190,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GameScene.h" />
+    <ClInclude Include="IScene.h" />
+    <ClInclude Include="MapLoader.h" />
+    <ClInclude Include="matrix.h" />
     <ClInclude Include="player.h" />
+    <ClInclude Include="SceneID.h" />
     <ClInclude Include="Skydome.h" />
+    <ClInclude Include="TileCollision.h" />
+    <ClInclude Include="TitleScene.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
