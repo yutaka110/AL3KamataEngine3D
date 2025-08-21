@@ -113,7 +113,7 @@ GameScene::~GameScene() {
 	//delete modelSkydome_;
 	delete modelBlock_;
 	delete skydome_;
-
+	delete title_;
 	// ブロックの WT を解放
 	for (std::vector<KamataEngine::WorldTransform*>& row : worldTransformBlocks_) {
 		for (KamataEngine::WorldTransform* wt : row) {
@@ -188,7 +188,7 @@ void GameScene::Initialize() {
 			wt->translation_.x = originX + x * pitchX;
 			wt->translation_.y = originY + y * pitchY;
 			wt->translation_.z = 10.0f;
-			wt->scale_ = {2.0f, 2.0f, 2.0f}; // 小さめにしたいときは 1.6f など
+			wt->scale_ = {1.6f, 1.6f, 1.6f}; // 小さめにしたいときは 1.6f など
 			wt->TransferMatrix();
 
 			worldTransformBlocks_[y][x] = wt;
@@ -217,8 +217,19 @@ void GameScene::Initialize() {
 
 	// 自キャラの生成
 	player_ = new Player();
+	
+	
+	//int sx = 0, sy = (int)mapData_.size() - 1; // 最下段の0列目タイル
+	KamataEngine::Vector3 spawnPos{30.0f, 22.0f, 10.0f};
+
+
 	// 自キャラの初期化
-	player_->Initialize(model_, textureHandle_, &camera_);
+	player_->Initialize(model_, textureHandle_, &camera_,spawnPos);
+
+	 // ★ タイトル開始
+	phase_ = ScenePhase::Title;
+	title_ = new TitleScene();
+	title_->Initialize(); // TitleScene は内部で title.png を読む実装【】
 }
 
 void GameScene::Update() {
@@ -227,6 +238,24 @@ void GameScene::Update() {
 
 		// 音声停止
 		Audio::GetInstance()->StopWave(voiceHandle_);
+	}
+
+
+	 // ★ タイトル中はタイトルだけ更新して抜ける
+	    if (phase_ == ScenePhase::Title) {
+		if (title_) title_->Update();
+		 // SPACE が押されると finished_ が true になる実装【】
+		    if (title_ && title_->IsFinished()) {
+			delete title_;
+			title_ = nullptr;
+			phase_ = ScenePhase::Game; // 切り替え
+			
+		}
+		else{
+			return; // まだタイトル中ならゲームの更新はしない
+			
+		}
+		
 	}
 
 	// スプライトの今の座標を取得
@@ -238,6 +267,9 @@ void GameScene::Update() {
 
 	// 移動した座標をスプライトに反映
 	sprite_->SetPosition(position);
+
+
+
 
 	// --- ブロックのワールド行列を毎フレーム計算して転送 ---
 	for (auto& row : worldTransformBlocks_) {
@@ -300,6 +332,16 @@ void GameScene::Update() {
 void GameScene::Draw() {
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 
+	// ★ タイトル中はタイトル画面のみ描いて return
+	    if (phase_ == ScenePhase::Title) {
+		if (title_) {
+			title_->Draw(); // TitleScene::Draw は 2D スプライトを描く実装【】
+			
+		}
+		return;
+		
+	}
+
 	// --------- 2D（スプライト） ---------
 	Sprite::PreDraw(dxCommon->GetCommandList());
 	if (sprite_) {
@@ -327,12 +369,14 @@ void GameScene::Draw() {
 	}
 
 	
+
+	
 	// 単体モデルの可視性テスト（必要なら一時的に有効化）
 	// model_->Draw(worldTransform_, debugCamera_->GetCamera(), textureHandle_);
 
-	/*if (player_) {
-		player_->Draw();
-	}*/
+	if (player_) {
+		player_->Draw(activeCam);
+	}
 
 	Model::PostDraw();
 }

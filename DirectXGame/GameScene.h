@@ -4,6 +4,9 @@
 #include "Skydome.h"
 // 先頭のインクルード付近に追加
 #include <vector>
+#include "TitleScene.h"
+
+enum class ScenePhase { Title, Game };
 
 //ゲームシーン
 class GameScene
@@ -66,4 +69,11 @@ class GameScene
 
 		// ★ デバッグカメラ有効フラグ（デフォルトOFF）
 	    bool isDebugCameraActive_ = false;
+
+
+		// ★ 現在のフェーズ（最初はタイトル）
+   ScenePhase phase_ = ScenePhase::Title;
+
+   // ★ タイトルシーンを中で所有（委譲用）
+   TitleScene* title_ = nullptr;
 };
