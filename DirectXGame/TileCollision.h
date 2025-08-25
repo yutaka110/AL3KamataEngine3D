@@ -19,3 +19,15 @@ inline float SkinWidth() { return 0.008f; }
 
 // 衝突解決（X→Y）。player の位置/速度/grounded を更新する
 void ResolvePlayerVsTilemap(Player& player, const TileField& tf);
+
+// 既存の宣言の下に追記
+class Enemy; // 前方宣言
+
+// 敵の当たり（プレイヤーより少し小さめ推奨）
+inline KamataEngine::Vector3 EnemyHalfExtents() { return {0.45f, 0.85f, 0.0f}; }
+
+// 敵とタイルの衝突解決（X→Y）。grounded/velocity を更新し、行列も転送する
+void ResolveEnemyVsTilemap(Enemy& enemy, const TileField& tf);
+
+// ▼ これを TileCollision.h の末尾あたりに追記
+inline bool IsSolidTile(const std::vector<std::vector<int>>& g, int y, int x) { return (y >= 0 && x >= 0 && y < (int)g.size() && x < (int)g[0].size() && g[y][x] != 0); }
