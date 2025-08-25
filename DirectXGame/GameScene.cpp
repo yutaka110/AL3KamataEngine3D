@@ -1,6 +1,8 @@
 #include "GameScene.h"
 #include "MapLoader.h"
 #include "TileCollision.h"
+#include "Enemy.h"
+#include <cmath>  // ★ 追加：std::sin / std::cos 用
 
 using namespace KamataEngine;
 
@@ -99,6 +101,14 @@ inline KamataEngine::Vector3 ExtractEyeFromView(const KamataEngine::Matrix4x4& V
 	return eye;
 }
 
+// ★ 自機/敵の当たりサイズ（見た目に合わせて微調整）
+inline Vector3 PlayerHalfExt() { return {0.45f, 0.90f, 0.0f}; }
+inline Vector3 EnemyHalfExt() { return {0.45f, 0.85f, 0.0f}; }
+
+inline bool AABBHit(const Vector3& aPos, const Vector3& aHalf, const Vector3& bPos, const Vector3& bHalf) {
+	return (std::abs(aPos.x - bPos.x) <= (aHalf.x + bHalf.x)) && (std::abs(aPos.y - bPos.y) <= (aHalf.y + bHalf.y));
+}
+
 
 } // namespace
 
@@ -115,6 +125,7 @@ GameScene::~GameScene() {
 	delete modelBlock_;
 	delete skydome_;
 	delete title_;
+	delete modelSphere_;
 	// ブロックの WT を解放
 	for (std::vector<KamataEngine::WorldTransform*>& row : worldTransformBlocks_) {
 		for (KamataEngine::WorldTransform* wt : row) {
@@ -123,11 +134,20 @@ GameScene::~GameScene() {
 		row.clear(); // 行ベクタを空に
 	}
 	worldTransformBlocks_.clear(); // 外側も空に
+
+	// ...既存...
+	for (auto& dp : deathParticles_) {
+		delete dp.wt;
+		dp.wt = nullptr;
+	} // ★ 追記
+	deathParticles_.clear();
+
+
 }
 
 void GameScene::Initialize() {
 	// ファイル名を指定してテクスチャを読み込む
-	textureHandle_ = TextureManager::Load("mario.jpg");
+	textureHandle_ = TextureManager::Load("enem.png");
 
 	
 
@@ -152,6 +172,14 @@ void GameScene::Initialize() {
 	model_ = Model::Create();
 
 	modelBlock_ = Model::CreateFromOBJ("cube", true);
+
+	// ★ パーティクル用の球モデルを用意（失敗したらキューブを使う）
+	modelSphere_ = Model::CreateFromOBJ("particle", true);
+	if (!modelSphere_) {
+		OutputDebugStringA("[WARN] sphere.obj が見つからないので、パーティクルは cube で代用します\n");
+		modelSphere_ = modelBlock_; // ← 既に表示できているブロックモデルを流用
+	}
+
 
 // ---- ① CSV読み込み ----
 	worldTransformBlocks_.clear(); // 念のためクリア
@@ -215,6 +243,23 @@ void GameScene::Initialize() {
 		}
 	}
 
+	// マップを並べるループの直後あたりに追加
+	for (int y = 0; y < (int)mapData_.size(); ++y) {
+		for (int x = 0; x < (int)mapData_[0].size(); ++x) {
+			if (mapData_[y][x] == 2) {
+				KamataEngine::Vector3 c{30.0f, 10.0f, 10.0f};
+				auto e = std::make_unique<Enemy>();
+				e->Initialize(model_, TextureManager::Load("enem.png"), c);
+				e->SetSpeed(1.0f); // 好みで
+
+				enemies_.push_back(std::move(e));
+
+				mapData_[y][x] = 0; // 通行可能にしておく
+			}
+		}
+	}
+
+
 
 	// デバッグカメラの生成
 	debugCamera_ = new DebugCamera(1280,720);
@@ -258,36 +303,30 @@ void GameScene::Update() {
 		Audio::GetInstance()->StopWave(voiceHandle_);
 	}
 
-
-	 // ★ タイトル中はタイトルだけ更新して抜ける
-	    if (phase_ == ScenePhase::Title) {
-		if (title_) title_->Update();
-		 // SPACE が押されると finished_ が true になる実装【】
-		    if (title_ && title_->IsFinished()) {
+	// ★ タイトル中はタイトルだけ更新して抜ける
+	if (phase_ == ScenePhase::Title) {
+		if (title_)
+			title_->Update();
+		// SPACE が押されると finished_ が true になる実装【】
+		if (title_ && title_->IsFinished()) {
 			delete title_;
 			title_ = nullptr;
 			phase_ = ScenePhase::Game; // 切り替え
-			
-		}
-		else{
+
+		} else {
 			return; // まだタイトル中ならゲームの更新はしない
-			
 		}
-		
 	}
 
-	// スプライトの今の座標を取得
-	Vector2 position = sprite_->GetPosition();
+	//// スプライトの今の座標を取得
+	// Vector2 position = sprite_->GetPosition();
 
-	// 座標を{2,1}移動
-	position.x += 2.0f;
-	position.y += 1.0f;
+	//// 座標を{2,1}移動
+	// position.x += 2.0f;
+	// position.y += 1.0f;
 
-	// 移動した座標をスプライトに反映
-	sprite_->SetPosition(position);
-
-
-
+	//// 移動した座標をスプライトに反映
+	// sprite_->SetPosition(position);
 
 	// --- ブロックのワールド行列を毎フレーム計算して転送 ---
 	for (auto& row : worldTransformBlocks_) {
@@ -304,53 +343,159 @@ void GameScene::Update() {
 		}
 	}
 
+	// ======= GAME 本編 =======
+	if (phase_ == ScenePhase::Game) {
+		// 自キャラ
+		player_->Update();
 
-	// 自キャラの更新
-	player_->Update();
+		// タイルフィールド作成 → 自機×タイル衝突（既存）
+		TileField tf;
+		tf.originX = tileOriginX_;
+		tf.originY = tileOriginY_;
+		tf.pitchX = tilePitchX_;
+		tf.pitchY = tilePitchY_;
+		tf.grid = &mapData_;
+		ResolvePlayerVsTilemap(*player_, tf);
 
-	// player_->Update(); の直後
-	TileField tf;
-	tf.originX = tileOriginX_;
-	tf.originY = tileOriginY_;
-	tf.pitchX = tilePitchX_;
-	tf.pitchY = tilePitchY_;
-	tf.grid = &mapData_;
-	ResolvePlayerVsTilemap(*player_, tf);
+		// 敵の更新＆衝突（既存）
+		const float dt = 1.0f / 60.0f;
+		for (auto& e : enemies_) {
+			e->Update(dt);
+			ResolveEnemyVsTilemap(*e, tf);
+
+			// 進行方向の「壁 or 足元無し」で反転（既存）
+			const auto& wt = e->GetWorldTransform();
+			const float ahead = (e->EditVelocity().x >= 0.0f) ? +tf.pitchX * 0.5f : -tf.pitchX * 0.5f;
+			int tx = (int)std::floor((wt.translation_.x + ahead - tf.originX) / tf.pitchX + 0.5f);
+			int ty = (int)std::floor((wt.translation_.y - tf.pitchY * 0.25f - tf.originY) / tf.pitchY + 0.5f);
+			bool wall = IsSolidTile(*tf.grid, ty, tx);
+			int txF = (int)std::floor((wt.translation_.x + ahead - tf.originX) / tf.pitchX + 0.5f);
+			int tyF = (int)std::floor((wt.translation_.y - tf.pitchY * 0.6f - tf.originY) / tf.pitchY + 0.5f);
+			bool noGround = !IsSolidTile(*tf.grid, tyF, txF);
+			if (wall || noGround)
+				e->EditVelocity().x = -e->EditVelocity().x;
+		}
+
+		// ===== 敵×自機の当たり判定 → ヒットで「消滅演出」開始 =====
+		const Vector3 pPos = player_->GetWorldTransform().translation_;
+		const Vector3 pHalf = PlayerHalfExt();
+		bool hit = false;
+		for (auto& e : enemies_) {
+			const Vector3 ePos = e->GetWorldTransform().translation_;
+			if (AABBHit(pPos, pHalf, ePos, EnemyHalfExt())) {
+				hit = true;
+				break;
+			}
+		}
+		if (hit) {
+			// 既存のDPを掃除
+			for (auto& dp : deathParticles_) {
+				delete dp.wt;
+				dp.wt = nullptr;
+			}
+			deathParticles_.clear();
+
+			// 8方向パーティクル生成
+			const float startScale = 0.6f;
+			const float lifeSec = 0.8f;
+			const float speed = 6.0f;
+
+			for (int i = 0; i < 8; ++i) {
+				const float ang = (3.1415926535f / 4.0f) * i; // 45°
+				DeathParticle dp;
+				dp.wt = new WorldTransform(); // ★ ヒープ確保
+				dp.wt->Initialize();
+				dp.wt->translation_ = {pPos.x, pPos.y, pPos.z};
+				dp.wt->scale_ = {startScale, startScale, startScale};
+				dp.vel = {std::cos(ang) * speed, std::sin(ang) * speed, 0.0f};
+				dp.life = dp.maxLife = lifeSec;
+
+				// 初回の行列転送
+				dp.wt->matWorld_ = MakeAffine(dp.wt->scale_, dp.wt->rotation_, dp.wt->translation_);
+				dp.wt->TransferMatrix();
+
+				deathParticles_.push_back(dp);
+			}
+			phase_ = ScenePhase::Death;
+			
+		} else if (phase_ == ScenePhase::Death) {
+			const float deltatime = 1.0f / 60.0f;
+			const float gravity = -9.8f * 0.4f;
+			const float damp = 0.98f;
+
+			bool anyAlive = false;
+			for (auto& dp : deathParticles_) {
+				if (dp.life <= 0.0f)
+					continue;
+				dp.life -= deltatime;
+
+				dp.vel.y += gravity * deltatime;
+				dp.vel.x *= damp;
+				dp.vel.y *= damp;
+
+				dp.wt->translation_.x += dp.vel.x * deltatime;
+				dp.wt->translation_.y += dp.vel.y * deltatime;
+
+				const float t = (dp.life > 0.0f) ? (dp.life / dp.maxLife) : 0.0f;
+				const float s = 0.6f * t;
+				dp.wt->scale_ = {s, s, s};
+
+				dp.wt->matWorld_ = MakeAffine(dp.wt->scale_, dp.wt->rotation_, dp.wt->translation_);
+				dp.wt->TransferMatrix();
+
+				if (dp.life > 0.0f)
+					anyAlive = true;
+			}
+
+			if (!anyAlive) {
+				// メモリ解放
+				for (auto& dp : deathParticles_) {
+					delete dp.wt;
+					dp.wt = nullptr;
+				}
+				deathParticles_.clear();
+
+				// タイトルに戻す
+				if (!title_) {
+					title_ = new TitleScene();
+					title_->Initialize();
+				}
+				phase_ = ScenePhase::Title;
+			}
+		}
 
 
 #if defined(_DEBUG)
-	// ★ F1 でデバッグカメラ ON/OFF をトグル
-	if (Input::GetInstance()->TriggerKey(DIK_F1)) {
-		isDebugCameraActive_ = !isDebugCameraActive_;
-		OutputDebugStringA(isDebugCameraActive_ ? "[DBG] DebugCamera: ON\n" : "[DBG] DebugCamera: OFF\n");
-	}
+		// ★ F1 でデバッグカメラ ON/OFF をトグル
+		if (Input::GetInstance()->TriggerKey(DIK_F1)) {
+			isDebugCameraActive_ = !isDebugCameraActive_;
+			OutputDebugStringA(isDebugCameraActive_ ? "[DBG] DebugCamera: ON\n" : "[DBG] DebugCamera: OFF\n");
+		}
 #endif
 
-	if (isDebugCameraActive_) {
-		// ★ デバッグカメラを更新して、その行列を描画用 camera_ へコピー
-		if (debugCamera_)
-			debugCamera_->Update();
-		
-		camera_.TransferMatrix(); // GPUへ反映（あなたの環境のAPIに合わせて）
-	} else {
-		// いつも通り通常カメラの更新
-		camera_.UpdateMatrix(); // もしくは TransferMatrix() 相当
+		if (isDebugCameraActive_) {
+			// ★ デバッグカメラを更新して、その行列を描画用 camera_ へコピー
+			if (debugCamera_)
+				debugCamera_->Update();
+
+			camera_.TransferMatrix(); // GPUへ反映（あなたの環境のAPIに合わせて）
+		} else {
+			// いつも通り通常カメラの更新
+			camera_.UpdateMatrix(); // もしくは TransferMatrix() 相当
+		}
+
+		// アクティブな View 行列を取り出す
+		KamataEngine::Matrix4x4 V = (isDebugCameraActive_ && debugCamera_) ? debugCamera_->GetCamera().matView : camera_.matView;
+
+		// Eye を復元して追従させる
+		if (skydome_)
+			skydome_->UpdateFollowAt(ExtractEyeFromView(V));
+
+		debugCamera_->SetFarZ(camera_.farZ);   // 通常カメラと同じ遠方クリップ面
+		debugCamera_->SetNearZ(camera_.nearZ); // 通常カメラと同じ近接クリップ面
 	}
-	
-	// アクティブな View 行列を取り出す
-	KamataEngine::Matrix4x4 V = (isDebugCameraActive_ && debugCamera_) ? debugCamera_->GetCamera().matView : camera_.matView;
-
-	// Eye を復元して追従させる
-	if (skydome_)
-		skydome_->UpdateFollowAt(ExtractEyeFromView(V));
-
-	debugCamera_->SetFarZ(camera_.farZ);   // 通常カメラと同じ遠方クリップ面
-	debugCamera_->SetNearZ(camera_.nearZ); // 通常カメラと同じ近接クリップ面
-
-
-
-	
 }
+
 
 	
 	
@@ -370,9 +515,9 @@ void GameScene::Draw() {
 
 	// --------- 2D（スプライト） ---------
 	Sprite::PreDraw(dxCommon->GetCommandList());
-	if (sprite_) {
+	/*if (sprite_) {
 		sprite_->Draw();
-	}
+	}*/
 	Sprite::PostDraw();
 
 	// --------- 3D（モデル） ---------
@@ -400,9 +545,25 @@ void GameScene::Draw() {
 	// 単体モデルの可視性テスト（必要なら一時的に有効化）
 	// model_->Draw(worldTransform_, debugCamera_->GetCamera(), textureHandle_);
 
-	if (player_) {
+	// ★ フェーズが Game のときだけプレイヤーを描く（Death 中は描かない）
+	if (phase_ == ScenePhase::Game && player_) {
 		player_->Draw(activeCam);
 	}
+
+	for (auto& e : enemies_) {
+		e->Draw(activeCam);
+	}
+
+	// ★ Death パーティクルの描画
+	if (phase_ == ScenePhase::Death && modelSphere_) {
+		for (auto& dp : deathParticles_) {
+			if (dp.life <= 0.0f || !dp.wt)
+				continue;
+			dp.wt->TransferMatrix(); // 念のため
+			modelSphere_->Draw(*dp.wt, activeCam);
+		}
+	}
+
 
 	Model::PostDraw();
 }
