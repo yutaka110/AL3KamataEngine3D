@@ -1,569 +1,475 @@
+// =============================================
+// File: GameScene.cpp （置き換え）
+// =============================================
 #include "GameScene.h"
-#include "MapLoader.h"
-#include "TileCollision.h"
-#include "Enemy.h"
-#include <cmath>  // ★ 追加：std::sin / std::cos 用
-
+#include "kamataEngine.h"
+#include <imgui.h>
 using namespace KamataEngine;
 
-namespace { // ---- local helpers ----
-using KamataEngine::Matrix4x4;
-using KamataEngine::Vector3;
-
-inline Matrix4x4 Identity() {
-	Matrix4x4 a{};
-	for (int i = 0; i < 4; ++i)
-		a.m[i][i] = 1.0f;
-	return a;
-}
-
-inline Matrix4x4 Multiply(const Matrix4x4& A, const Matrix4x4& B) {
-	Matrix4x4 C{};
-	for (int r = 0; r < 4; ++r) {
-		for (int c = 0; c < 4; ++c) {
-			C.m[r][c] = A.m[r][0] * B.m[0][c] + A.m[r][1] * B.m[1][c] + A.m[r][2] * B.m[2][c] + A.m[r][3] * B.m[3][c];
-		}
-	}
-	return C;
-}
-
-inline Matrix4x4 MakeScale(const Vector3& s) {
-	Matrix4x4 a = Identity();
-	a.m[0][0] = s.x;
-	a.m[1][1] = s.y;
-	a.m[2][2] = s.z;
-	return a;
-}
-inline Matrix4x4 MakeTranslate(const Vector3& t) {
-	Matrix4x4 a = Identity();
-	a.m[3][0] = t.x;
-	a.m[3][1] = t.y;
-	a.m[3][2] = t.z; // ←行ベクトル系（多くの教材エンジンがこれ）
-	return a;
-}
-inline Matrix4x4 MakeRotateX(float rx) {
-	Matrix4x4 a = Identity();
-	float c = std::cos(rx), s = std::sin(rx);
-	a.m[1][1] = c;
-	a.m[1][2] = s;
-	a.m[2][1] = -s;
-	a.m[2][2] = c;
-	return a;
-}
-inline Matrix4x4 MakeRotateY(float ry) {
-	Matrix4x4 a = Identity();
-	float c = std::cos(ry), s = std::sin(ry);
-	a.m[0][0] = c;
-	a.m[0][2] = -s;
-	a.m[2][0] = s;
-	a.m[2][2] = c;
-	return a;
-}
-inline Matrix4x4 MakeRotateZ(float rz) {
-	Matrix4x4 a = Identity();
-	float c = std::cos(rz), s = std::sin(rz);
-	a.m[0][0] = c;
-	a.m[0][1] = s;
-	a.m[1][0] = -s;
-	a.m[1][1] = c;
-	return a;
-}
-
-// 角度はラジアン。行列の掛け順は S * (Rx*Ry*Rz) * T（教材の行ベクトル想定）
-inline Matrix4x4 MakeAffine(const Vector3& s, const Vector3& r, const Vector3& t) {
-	Matrix4x4 S = MakeScale(s);
-	Matrix4x4 Rx = MakeRotateX(r.x);
-	Matrix4x4 Ry = MakeRotateY(r.y);
-	Matrix4x4 Rz = MakeRotateZ(r.z);
-	Matrix4x4 R = Multiply(Multiply(Rx, Ry), Rz);
-	Matrix4x4 T = MakeTranslate(t);
-	return Multiply(Multiply(S, R), T);
-}
-
-// --- row-vector × row-major の View から Eye を復元 ---
-inline KamataEngine::Vector3 ExtractEyeFromView(const KamataEngine::Matrix4x4& V) {
-	// V の上左3x3は R^T、最下段(3,0..2) は -eye * R^T
-	float Rt00 = V.m[0][0], Rt01 = V.m[0][1], Rt02 = V.m[0][2];
-	float Rt10 = V.m[1][0], Rt11 = V.m[1][1], Rt12 = V.m[1][2];
-	float Rt20 = V.m[2][0], Rt21 = V.m[2][1], Rt22 = V.m[2][2];
-
-	// R = (R^T)^T
-	float R00 = Rt00, R01 = Rt10, R02 = Rt20;
-	float R10 = Rt01, R11 = Rt11, R12 = Rt21;
-	float R20 = Rt02, R21 = Rt12, R22 = Rt22;
-
-	float tx = V.m[3][0], ty = V.m[3][1], tz = V.m[3][2]; // -eye * R^T
-
-	KamataEngine::Vector3 eye{};
-	eye.x = (-tx) * R00 + (-ty) * R01 + (-tz) * R02;
-	eye.y = (-tx) * R10 + (-ty) * R11 + (-tz) * R12;
-	eye.z = (-tx) * R20 + (-ty) * R21 + (-tz) * R22;
-	return eye;
-}
-
-// ★ 自機/敵の当たりサイズ（見た目に合わせて微調整）
-inline Vector3 PlayerHalfExt() { return {0.45f, 0.90f, 0.0f}; }
-inline Vector3 EnemyHalfExt() { return {0.45f, 0.85f, 0.0f}; }
-
-inline bool AABBHit(const Vector3& aPos, const Vector3& aHalf, const Vector3& bPos, const Vector3& bHalf) {
-	return (std::abs(aPos.x - bPos.x) <= (aHalf.x + bHalf.x)) && (std::abs(aPos.y - bPos.y) <= (aHalf.y + bHalf.y));
-}
-
-
-} // namespace
-
-
-
-
 GameScene::~GameScene() {
-	delete sprite_;
-	delete model_;
-	// 自キャラの解放
-	delete player_;
-	delete debugCamera_;
-	//delete modelSkydome_;
-	delete modelBlock_;
-	delete skydome_;
-	delete title_;
-	delete modelSphere_;
-	// ブロックの WT を解放
-	for (std::vector<KamataEngine::WorldTransform*>& row : worldTransformBlocks_) {
-		for (KamataEngine::WorldTransform* wt : row) {
-			delete wt; // nullptr なら何もしない
-		}
-		row.clear(); // 行ベクタを空に
-	}
-	worldTransformBlocks_.clear(); // 外側も空に
-
-	// ...既存...
-	for (auto& dp : deathParticles_) {
-		delete dp.wt;
-		dp.wt = nullptr;
-	} // ★ 追記
-	deathParticles_.clear();
-
-
+	// モデル等はエンジン側のライフサイクルに追従（必要なら delete）
 }
 
 void GameScene::Initialize() {
-	// ファイル名を指定してテクスチャを読み込む
-	textureHandle_ = TextureManager::Load("enem.png");
+	// --- モデル ---
+	cubeModel_ = Model::CreateFromOBJ("cube", true); // 無ければ Model::Create() に差し替え
 
-	
-
-	// サウンドデータを読み込む
-	soundDataHandle_ = Audio::GetInstance()->LoadWave("mokugyo.wav");
-
-	// 音声再生
-	voiceHandle_ = Audio::GetInstance()->PlayWave(soundDataHandle_, true);
-
-	Audio::GetInstance()->PlayWave(soundDataHandle_);
-
-	// スプライトインスタンスの生成
-	sprite_ = Sprite::Create(textureHandle_, {100, 50});
-
-	
-
-	// ワールドトランスファームの初期化
-	worldTransform_.Initialize();
-
-
-	// 3Dモデル（既存の model_ をブロックにも使い回し）
-	model_ = Model::Create();
-
-	modelBlock_ = Model::CreateFromOBJ("cube", true);
-
-	// ★ パーティクル用の球モデルを用意（失敗したらキューブを使う）
-	modelSphere_ = Model::CreateFromOBJ("particle", true);
-	if (!modelSphere_) {
-		OutputDebugStringA("[WARN] sphere.obj が見つからないので、パーティクルは cube で代用します\n");
-		modelSphere_ = modelBlock_; // ← 既に表示できているブロックモデルを流用
-	}
-
-
-// ---- ① CSV読み込み ----
-	worldTransformBlocks_.clear(); // 念のためクリア
-	mapData_.clear();
-	if (!MapLoader::LoadCsv("map.csv", mapData_)) {
-		OutputDebugStringA("[WARN] map.csv が読めないので空マップで起動します\n");
-		// 読めなかった場合のデフォルト（任意）
-		mapData_ = {
-		    {1, 0, 1, 0},
-            {0, 1, 0, 1}
-        };
-	}
-	MapLoader::NormalizeRect(mapData_);
-
-	// ---- ② マップからWTを生成 ----
-	// タイルの間隔や原点は好みで調整
-	const float kModelSize = 2.0f; // scale={2,2,2} 時の見かけ1マス（目安）
-	const float kGap = 0.6f;       // タイル間の隙間
-	const float pitchX = kModelSize + kGap;
-	const float pitchY = kModelSize + kGap;
-	const float originX = 20.0f; // 画面内オフセット
-	const float originY = 6.0f;
-
-	const uint32_t rows = (uint32_t)mapData_.size();
-	const uint32_t cols = rows ? (uint32_t)mapData_[0].size() : 0;
-	worldTransformBlocks_.assign(rows, std::vector<WorldTransform*>(cols, nullptr));
-
-	for (uint32_t y = 0; y < rows; ++y) {
-		for (uint32_t x = 0; x < cols; ++x) {
-			if (mapData_[y][x] == 0)
-				continue; // 0 は “穴” → nullptr のまま
-
-			auto* wt = new WorldTransform();
-			wt->Initialize();
-			wt->translation_.x = originX + x * pitchX;
-			wt->translation_.y = originY + y * pitchY;
-			wt->translation_.z = 10.0f;
-			wt->scale_ = {1.08f, 1.08f, 1.08f}; // 小さめにしたいときは 1.6f など
-			wt->TransferMatrix();
-
-			worldTransformBlocks_[y][x] = wt;
-		}
-	}
-
-
-	// 既存の pitchX/pitchY/originX/originY を保持
-	tilePitchX_ = pitchX;
-	tilePitchY_ = pitchY;
-	tileOriginX_ = originX;
-	tileOriginY_ = originY;
-
-	// half は最初に見つかったブロックの scale から推定
-	for (uint32_t y = 0; y < rows; ++y) {
-		for (uint32_t x = 0; x < cols; ++x) {
-			if (worldTransformBlocks_[y][x]) {
-				tileHalfX_ = worldTransformBlocks_[y][x]->scale_.x * 0.5f;
-				tileHalfY_ = worldTransformBlocks_[y][x]->scale_.y * 0.5f;
-				y = rows;
-				break;
-			}
-		}
-	}
-
-	// マップを並べるループの直後あたりに追加
-	for (int y = 0; y < (int)mapData_.size(); ++y) {
-		for (int x = 0; x < (int)mapData_[0].size(); ++x) {
-			if (mapData_[y][x] == 2) {
-				KamataEngine::Vector3 c{30.0f, 10.0f, 10.0f};
-				auto e = std::make_unique<Enemy>();
-				e->Initialize(model_, TextureManager::Load("enem.png"), c);
-				e->SetSpeed(1.0f); // 好みで
-
-				enemies_.push_back(std::move(e));
-
-				mapData_[y][x] = 0; // 通行可能にしておく
-			}
-		}
-	}
-
-
-
-	// デバッグカメラの生成
-	debugCamera_ = new DebugCamera(1280,720);
-	
-
-	// カメラの初期化
+	// --- カメラ（真上固定風） ---
 	camera_.Initialize();
-	camera_.farZ = 20000.0f; // または SetFar(20000.0f);
+	camera_.farZ = 2000.0f; // 広め
 	camera_.nearZ = 0.1f;
 
+	// ※ あなたの Camera に LookAt/Orthographic セッタがあれば、ここで「真上固定」にしてください。
+	// 未対応の場合でも、モデル配置を原点付近＆Zも使っていれば見えるはず。必要なら後で微調整。
+	// KamataEngine の Camera が position/rotation を直接持つタイプ想定
+	camera_.translation_ = {0.0f, CAM_H, 0.0f};
+	// X軸に -90° 回転（上から地面(XZ)を覗く）
+	camera_.rotation_ = {-3.14159265f * 0.5f, 0.0f, 0.0f};
+	camera_.TransferMatrix(); // ← エンジンの更新メソッド名に合わせて（Update/Reset等ならそちらを）
 
-	// 3Dモデルの生成
-    //modelSkydome_ = Model::CreateFromOBJ("skydome", true);
-	// ★ スカイドーム生成（最初は原点固定でOK / 追従は後述）
-	skydome_ = new Skydome();
-	skydome_->Initialize("skydome", /*scale=*/1200.0f); // シーンに合わせて調整
+	// --- マップ（壁を少しだけ配置） ---
+	walls_.clear();
+	wallWts_.clear();
+	wallWts_.reserve(16); // 適当な上限でOK
+	auto addWall = [&](float cx, float cz, float sx, float sz) {
+		BoxXZ w{};
+		w.minx = cx - sx * 0.5f;
+		w.maxx = cx + sx * 0.5f;
+		w.minz = cz - sz * 0.5f;
+		w.maxz = cz + sz * 0.5f;
+		walls_.push_back(w); // 座標だけを格納（コピーOK）
+
+		 auto wt = std::make_unique<KamataEngine::WorldTransform>();
+		wt->Initialize();
+		BuildWallWT(w, *wt);               // 初期行列を設定
+		wallWts_.push_back(std::move(wt)); // 永続保持
+	};
+	addWall(0.0f, 0.0f, 2.0f, 1.0f);
+	addWall(0.0f, 3.0f, 2.0f, 1.0f);
+	addWall(-3.5f, 0.0f, 1.0f, 4.0f);
 
 
-	// 自キャラの生成
-	player_ = new Player();
-	
-	
-	//int sx = 0, sy = (int)mapData_.size() - 1; // 最下段の0列目タイル
-	KamataEngine::Vector3 spawnPos{30.0f, 22.0f, 10.0f};
+	// --- プレイヤー／敵 初期化 ---
+	player_.wt.Initialize();
+	player_.x = -2.5f;
+	player_.z = -2.0f;
+	player_.dir4 = 0; // +X 向き
+	SyncWT_Tank(player_);
 
+	enemy_.wt.Initialize();
+	enemy_.x = +2.5f;
+	enemy_.z = +2.0f;
+	enemy_.dir4 = 2; // -X 向き
+	SyncWT_Tank(enemy_);
 
-	// 自キャラの初期化
-	player_->Initialize(model_, textureHandle_, &camera_,spawnPos);
+	bullets_.clear();
 
-	 // ★ タイトル開始
-	phase_ = ScenePhase::Title;
-	title_ = new TitleScene();
-	title_->Initialize(); // TitleScene は内部で title.png を読む実装【】
+	phase_ = Phase::Reserve;
+	selSlot_ = 0;
+	execStep_ = execMini_ = 0;
 }
 
 void GameScene::Update() {
-	// スペースキーを押した瞬間
-	if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
 
-		// 音声停止
-		Audio::GetInstance()->StopWave(voiceHandle_);
+	 // ★ カメラを毎フレーム転送（真上固定）
+	camera_.translation_ = {0.0f, CAM_H, 0.0f};
+	camera_.rotation_ = {-3.14159265f * 0.5f, 0.0f, 0.0f}; // -90°俯瞰
+	camera_.TransferMatrix();
+
+
+	// 予約 or 実行 or リザルト
+	switch (phase_) {
+	case Phase::Reserve:
+		HandleReserveInput();
+		break;
+	case Phase::Execute:
+		if (TickExecuteMiniFrame()) {
+			phase_ = Phase::Result;
+		}
+		break;
+	case Phase::Result:
+		// Enter でリスタート（同じマップで再戦）
+		if (Input::GetInstance()->TriggerKey(DIK_RETURN)) {
+			Initialize();
+		}
+		break;
 	}
 
-	// ★ タイトル中はタイトルだけ更新して抜ける
-	if (phase_ == ScenePhase::Title) {
-		if (title_)
-			title_->Update();
-		// SPACE が押されると finished_ が true になる実装【】
-		if (title_ && title_->IsFinished()) {
-			delete title_;
-			title_ = nullptr;
-			phase_ = ScenePhase::Game; // 切り替え
-
-		} else {
-			return; // まだタイトル中ならゲームの更新はしない
+	// --- ImGui（簡易デバッグUI） ---
+	if (ImGui::Begin("Order Tank Debug")) {
+		ImGui::Text("Phase: %s", phase_ == Phase::Reserve ? "Reserve" : phase_ == Phase::Execute ? "Execute" : "Result");
+		ImGui::Separator();
+		ImGui::Text("Player Queue:");
+		for (size_t i = 0; i < player_.queue.size(); ++i) {
+			ImGui::SameLine();
+			ImGui::Text("[%d]=%d", (int)i, (int)player_.queue[i]);
+		}
+		ImGui::Text("\nEnemy Queue:");
+		for (size_t i = 0; i < enemy_.queue.size(); ++i) {
+			ImGui::SameLine();
+			ImGui::Text("[%d]=%d", (int)i, (int)enemy_.queue[i]);
 		}
 	}
+	ImGui::End();
+}
 
-	//// スプライトの今の座標を取得
-	// Vector2 position = sprite_->GetPosition();
+void GameScene::Draw() {
+	// ★ カメラを毎フレーム転送（真上固定）
+	camera_.translation_ = {0.0f, CAM_H, 0.0f};
+	camera_.rotation_ = {-3.14159265f * 0.5f, 0.0f, 0.0f}; // -90°俯瞰
+	camera_.TransferMatrix();
 
-	//// 座標を{2,1}移動
-	// position.x += 2.0f;
-	// position.y += 1.0f;
+	auto* dxCommon = DirectXCommon::GetInstance();
 
-	//// 移動した座標をスプライトに反映
-	// sprite_->SetPosition(position);
+	Sprite::PreDraw(dxCommon->GetCommandList());
+	Sprite::PostDraw();
 
-	// --- ブロックのワールド行列を毎フレーム計算して転送 ---
-	for (auto& row : worldTransformBlocks_) {
-		for (auto* wt : row) {
-			if (!wt)
-				continue;
+	Model::PreDraw(dxCommon->GetCommandList());
 
-			// 角度はラジアン想定。必要ならここで s/r/t を更新してから…
-			wt->matWorld_ = MakeAffine(wt->scale_, wt->rotation_, wt->translation_);
-			if (wt->parent_) {
-				wt->matWorld_ = Multiply(wt->matWorld_, wt->parent_->matWorld_);
-			}
-			wt->TransferMatrix(); // GPUへ反映
-		}
+	// 壁（永続WTで描画）
+	for (size_t i = 0; i < walls_.size(); ++i) {
+		// もし壁を動かすなら BuildWallWT で更新してから描画
+		DrawCube(*wallWts_[i], camera_);
 	}
 
-	// ======= GAME 本編 =======
-	if (phase_ == ScenePhase::Game) {
-		// 自キャラ
-		player_->Update();
+	if (player_.alive)
+		DrawCube(player_.wt, camera_);
+	if (enemy_.alive)
+		DrawCube(enemy_.wt, camera_);
 
-		// タイルフィールド作成 → 自機×タイル衝突（既存）
-		TileField tf;
-		tf.originX = tileOriginX_;
-		tf.originY = tileOriginY_;
-		tf.pitchX = tilePitchX_;
-		tf.pitchY = tilePitchY_;
-		tf.grid = &mapData_;
-		ResolvePlayerVsTilemap(*player_, tf);
-
-		// 敵の更新＆衝突（既存）
-		const float dt = 1.0f / 60.0f;
-		for (auto& e : enemies_) {
-			e->Update(dt);
-			ResolveEnemyVsTilemap(*e, tf);
-
-			// 進行方向の「壁 or 足元無し」で反転（既存）
-			const auto& wt = e->GetWorldTransform();
-			const float ahead = (e->EditVelocity().x >= 0.0f) ? +tf.pitchX * 0.5f : -tf.pitchX * 0.5f;
-			int tx = (int)std::floor((wt.translation_.x + ahead - tf.originX) / tf.pitchX + 0.5f);
-			int ty = (int)std::floor((wt.translation_.y - tf.pitchY * 0.25f - tf.originY) / tf.pitchY + 0.5f);
-			bool wall = IsSolidTile(*tf.grid, ty, tx);
-			int txF = (int)std::floor((wt.translation_.x + ahead - tf.originX) / tf.pitchX + 0.5f);
-			int tyF = (int)std::floor((wt.translation_.y - tf.pitchY * 0.6f - tf.originY) / tf.pitchY + 0.5f);
-			bool noGround = !IsSolidTile(*tf.grid, tyF, txF);
-			if (wall || noGround)
-				e->EditVelocity().x = -e->EditVelocity().x;
-		}
-
-		// ===== 敵×自機の当たり判定 → ヒットで「消滅演出」開始 =====
-		const Vector3 pPos = player_->GetWorldTransform().translation_;
-		const Vector3 pHalf = PlayerHalfExt();
-		bool hit = false;
-		for (auto& e : enemies_) {
-			const Vector3 ePos = e->GetWorldTransform().translation_;
-			if (AABBHit(pPos, pHalf, ePos, EnemyHalfExt())) {
-				hit = true;
-				break;
-			}
-		}
-		if (hit) {
-			// 既存のDPを掃除
-			for (auto& dp : deathParticles_) {
-				delete dp.wt;
-				dp.wt = nullptr;
-			}
-			deathParticles_.clear();
-
-			// 8方向パーティクル生成
-			const float startScale = 0.6f;
-			const float lifeSec = 0.8f;
-			const float speed = 6.0f;
-
-			for (int i = 0; i < 8; ++i) {
-				const float ang = (3.1415926535f / 4.0f) * i; // 45°
-				DeathParticle dp;
-				dp.wt = new WorldTransform(); // ★ ヒープ確保
-				dp.wt->Initialize();
-				dp.wt->translation_ = {pPos.x, pPos.y, pPos.z};
-				dp.wt->scale_ = {startScale, startScale, startScale};
-				dp.vel = {std::cos(ang) * speed, std::sin(ang) * speed, 0.0f};
-				dp.life = dp.maxLife = lifeSec;
-
-				// 初回の行列転送
-				dp.wt->matWorld_ = MakeAffine(dp.wt->scale_, dp.wt->rotation_, dp.wt->translation_);
-				dp.wt->TransferMatrix();
-
-				deathParticles_.push_back(dp);
-			}
-			phase_ = ScenePhase::Death;
-			
-		} else if (phase_ == ScenePhase::Death) {
-			const float deltatime = 1.0f / 60.0f;
-			const float gravity = -9.8f * 0.4f;
-			const float damp = 0.98f;
-
-			bool anyAlive = false;
-			for (auto& dp : deathParticles_) {
-				if (dp.life <= 0.0f)
-					continue;
-				dp.life -= deltatime;
-
-				dp.vel.y += gravity * deltatime;
-				dp.vel.x *= damp;
-				dp.vel.y *= damp;
-
-				dp.wt->translation_.x += dp.vel.x * deltatime;
-				dp.wt->translation_.y += dp.vel.y * deltatime;
-
-				const float t = (dp.life > 0.0f) ? (dp.life / dp.maxLife) : 0.0f;
-				const float s = 0.6f * t;
-				dp.wt->scale_ = {s, s, s};
-
-				dp.wt->matWorld_ = MakeAffine(dp.wt->scale_, dp.wt->rotation_, dp.wt->translation_);
-				dp.wt->TransferMatrix();
-
-				if (dp.life > 0.0f)
-					anyAlive = true;
-			}
-
-			if (!anyAlive) {
-				// メモリ解放
-				for (auto& dp : deathParticles_) {
-					delete dp.wt;
-					dp.wt = nullptr;
-				}
-				deathParticles_.clear();
-
-				// タイトルに戻す
-				if (!title_) {
-					title_ = new TitleScene();
-					title_->Initialize();
-				}
-				phase_ = ScenePhase::Title;
-			}
-		}
-
-
-#if defined(_DEBUG)
-		// ★ F1 でデバッグカメラ ON/OFF をトグル
-		if (Input::GetInstance()->TriggerKey(DIK_F1)) {
-			isDebugCameraActive_ = !isDebugCameraActive_;
-			OutputDebugStringA(isDebugCameraActive_ ? "[DBG] DebugCamera: ON\n" : "[DBG] DebugCamera: OFF\n");
-		}
-#endif
-
-		if (isDebugCameraActive_) {
-			// ★ デバッグカメラを更新して、その行列を描画用 camera_ へコピー
-			if (debugCamera_)
-				debugCamera_->Update();
-
-			camera_.TransferMatrix(); // GPUへ反映（あなたの環境のAPIに合わせて）
-		} else {
-			// いつも通り通常カメラの更新
-			camera_.UpdateMatrix(); // もしくは TransferMatrix() 相当
-		}
-
-		// アクティブな View 行列を取り出す
-		KamataEngine::Matrix4x4 V = (isDebugCameraActive_ && debugCamera_) ? debugCamera_->GetCamera().matView : camera_.matView;
-
-		// Eye を復元して追従させる
-		if (skydome_)
-			skydome_->UpdateFollowAt(ExtractEyeFromView(V));
-
-		debugCamera_->SetFarZ(camera_.farZ);   // 通常カメラと同じ遠方クリップ面
-		debugCamera_->SetNearZ(camera_.nearZ); // 通常カメラと同じ近接クリップ面
+	// 弾（永続WTで描画）
+	for (auto& b : bullets_) {
+		if (!b.alive || !b.wt)
+			continue;
+		DrawCube(*b.wt, camera_);
 	}
+
+	Model::PostDraw();
 }
 
 
-	
-	
 
-void GameScene::Draw() {
-	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
+// ================= 予約入力 ====================
+void GameScene::HandleReserveInput() {
+	// スロット移動
+	if (Input::GetInstance()->TriggerKey(DIK_LEFT))
+		selSlot_ = (std::max)(0, selSlot_ - 1);
+	if (Input::GetInstance()->TriggerKey(DIK_RIGHT))
+		selSlot_ = (std::min)(2, selSlot_ + 1);
 
-	// ★ タイトル中はタイトル画面のみ描いて return
-	    if (phase_ == ScenePhase::Title) {
-		if (title_) {
-			title_->Draw(); // TitleScene::Draw は 2D スプライトを描く実装【】
-			
+	auto pushAct = [&](Act a) {
+		if ((int)player_.queue.size() < 3) {
+			// カーソル位置に挿入：分かりやすさ優先（末尾でも可）
+			if (selSlot_ > (int)player_.queue.size())
+				selSlot_ = (int)player_.queue.size();
+			player_.queue.insert(player_.queue.begin() + selSlot_, a);
+			selSlot_ = (std::min)(2, selSlot_ + 1);
 		}
+	};
+
+	// アクション入力（W/A/D/J）
+	if (Input::GetInstance()->TriggerKey(DIK_W))
+		pushAct(Act::MOVE_FWD);
+	if (Input::GetInstance()->TriggerKey(DIK_A))
+		pushAct(Act::ROT_L);
+	if (Input::GetInstance()->TriggerKey(DIK_D))
+		pushAct(Act::ROT_R);
+	if (Input::GetInstance()->TriggerKey(DIK_J))
+		pushAct(Act::SHOOT);
+
+	// 削除（BackSpace）
+	if (Input::GetInstance()->TriggerKey(DIK_BACK)) {
+		if (!player_.queue.empty()) {
+			if (selSlot_ >= (int)player_.queue.size())
+				selSlot_ = (int)player_.queue.size() - 1;
+			if (selSlot_ >= 0)
+				player_.queue.erase(player_.queue.begin() + selSlot_);
+			selSlot_ = (std::max)(0, selSlot_ - 1);
+		}
+	}
+
+	// 実行（Enter）
+	if (Input::GetInstance()->TriggerKey(DIK_RETURN)) {
+		if (!player_.queue.empty()) {
+			BuildEnemyOrder();
+			phase_ = Phase::Execute;
+			execStep_ = 0;
+			execMini_ = 0;
+		}
+	}
+}
+
+// ============== 敵の予約（超シンプル） =================
+void GameScene::BuildEnemyOrder() {
+	enemy_.queue.clear();
+
+	// 同列/同行なら射線チェック（壁に遮られてないなら SHOOT）
+	auto clearLine = [&](bool sameX) -> bool {
+		if (sameX) {
+			float x = player_.x;
+			if (std::abs(x - enemy_.x) > 0.01f)
+				return false;
+			float a = (std::min)(player_.z, enemy_.z), b = (std::max)(player_.z, enemy_.z);
+			for (auto& w : walls_)
+				if (w.minx <= x && x <= w.maxx && !(b <= w.minz || w.maxz <= a))
+					return false;
+			return true;
+		} else {
+			float z = player_.z;
+			if (std::abs(z - enemy_.z) > 0.01f)
+				return false;
+			float a = (std::min)(player_.x, enemy_.x), b = (std::max)(player_.x, enemy_.x);
+			for (auto& w : walls_)
+				if (w.minz <= z && z <= w.maxz && !(b <= w.minx || w.maxx <= a))
+					return false;
+			return true;
+		}
+	};
+
+	if (clearLine(true) || clearLine(false)) {
+		enemy_.queue.push_back(Act::SHOOT);
+	}
+
+	// 残りはプレイヤーに近づく（大きい軸を優先）
+	float dx = player_.x - enemy_.x;
+	float dz = player_.z - enemy_.z;
+	if (std::abs(dx) > std::abs(dz)) {
+		// X 方向を向く
+		int want = (dx >= 0) ? 0 : 2;
+		int delta = (want - enemy_.dir4 + 4) % 4;
+		if (delta == 1)
+			enemy_.queue.push_back(Act::ROT_R);
+		else if (delta == 3)
+			enemy_.queue.push_back(Act::ROT_L);
+		enemy_.queue.push_back(Act::MOVE_FWD);
+	} else {
+		// Z 方向を向く
+		int want = (dz >= 0) ? 1 : 3;
+		int delta = (want - enemy_.dir4 + 4) % 4;
+		if (delta == 1)
+			enemy_.queue.push_back(Act::ROT_R);
+		else if (delta == 3)
+			enemy_.queue.push_back(Act::ROT_L);
+		enemy_.queue.push_back(Act::MOVE_FWD);
+	}
+
+	// 3手未満なら MOVE で埋める
+	while ((int)enemy_.queue.size() < 3)
+		enemy_.queue.push_back(Act::MOVE_FWD);
+}
+
+// ============== 実行フェーズ進行 ========================
+bool GameScene::TickExecuteMiniFrame() {
+	// 既に誰か死んでいたら決着
+	if (!player_.alive || !enemy_.alive)
+		return true;
+
+	// 現在ステップのアクションを取り出す（あれば実行）
+	auto stepAct = [&](TankXZ& t) -> Act {
+		if ((int)t.queue.size() > execStep_)
+			return t.queue[execStep_];
+		return Act::MOVE_FWD; // 無ければ何もしない扱いでもOK
+	};
+
+	// ミニフレーム進行：ROT/SHOOT はミニフレーム0で即時実行、MOVE は分割
+	if (execMini_ == 0) {
+		// 回転
+		if (stepAct(player_) == Act::ROT_L)
+			player_.dir4 = (player_.dir4 + 3) & 3;
+		if (stepAct(player_) == Act::ROT_R)
+			player_.dir4 = (player_.dir4 + 1) & 3;
+		if (stepAct(enemy_) == Act::ROT_L)
+			enemy_.dir4 = (enemy_.dir4 + 3) & 3;
+		if (stepAct(enemy_) == Act::ROT_R)
+			enemy_.dir4 = (enemy_.dir4 + 1) & 3;
+
+		// SHOOT
+		auto shoot = [&](TankXZ& t) {
+			float dx, dz;
+			DirVec(t.dir4, dx, dz);
+			BulletXZ b{};
+			b.x = t.x;
+			b.z = t.z;
+			b.vx = dx * BULLET_SPEED / STEP_N;
+			b.vz = dz * BULLET_SPEED / STEP_N;
+			b.alive = true;
+
+			b.wt = std::make_unique<KamataEngine::WorldTransform>(); // 永続WT
+			b.wt->Initialize();
+			b.wt->scale_ = {BULLET_R * 2, BULLET_R * 2, BULLET_R * 2}; // 見た目サイズ
+			b.wt->translation_ = {b.x, Y_LIFT, b.z};
+			b.wt->TransferMatrix();
+
+			bullets_.push_back(std::move(b));
+		};
+
+		if (stepAct(player_) == Act::SHOOT)
+			shoot(player_);
+		if (stepAct(enemy_) == Act::SHOOT)
+			shoot(enemy_);
+
+		// 描画WTを同期
+		SyncWT_Tank(player_);
+		SyncWT_Tank(enemy_);
+	}
+
+	// MOVE のときだけ分割移動
+	if (stepAct(player_) == Act::MOVE_FWD)
+		MoveOneMini(player_);
+	if (stepAct(enemy_) == Act::MOVE_FWD)
+		MoveOneMini(enemy_);
+
+	// 弾の更新（全弾）
+	if (UpdateBulletsMini())
+		return true; // 決着
+
+	// 次ミニフレームへ
+	execMini_++;
+	if (execMini_ >= STEP_N) {
+		execMini_ = 0;
+		execStep_++;
+		// 次ステップへ（3手終わったら次ターン）
+		if (execStep_ >= 3) {
+			execStep_ = 0;
+			// 終了チェック
+			if (!player_.alive || !enemy_.alive)
+				return true;
+			// 次ターンへ
+			player_.queue.clear();
+			enemy_.queue.clear();
+			selSlot_ = 0;
+			bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(), [](const BulletXZ& b) { return !b.alive; }), bullets_.end());
+			phase_ = Phase::Reserve; // 予約に戻る
+		}
+	}
+	return (!player_.alive || !enemy_.alive);
+}
+
+void GameScene::MoveOneMini(TankXZ& t) {
+	float dx, dz;
+	DirVec(t.dir4, dx, dz);
+	float nx = t.x + dx * (CELL / STEP_N);
+	float nz = t.z + dz * (CELL / STEP_N);
+
+	// 壁衝突（タンク半径ぶん膨張）
+	if (!HitBoxExpanded(nx, nz, TANK_HALF_W, TANK_HALF_D)) {
+		t.x = nx;
+		t.z = nz;
+		SyncWT_Tank(t);
+	}
+}
+
+bool GameScene::UpdateBulletsMini() {
+	for (auto& b : bullets_) {
+		if (!b.alive)
+			continue;
+		float px = b.x, pz = b.z;
+		b.x += b.vx;
+		b.z += b.vz;
+		ReflectBullet(b, px, pz);
+		if (b.alive && b.wt) { // 存在する間はWTを更新
+			b.wt->translation_ = {b.x, Y_LIFT, b.z};
+			b.wt->TransferMatrix();
+		}
+		if (!player_.alive || !enemy_.alive)
+			return true;
+	}
+	return (!player_.alive || !enemy_.alive);
+}
+
+
+void GameScene::ReflectBullet(BulletXZ& b, float prevx, float prevz) {
+	if (!b.alive)
 		return;
-		
+
+	// 壁AABB（弾半径ぶん膨張）と最近点距離
+	auto hitWall = [&](const BoxXZ& w) -> bool {
+		float nx = Clamp(b.x, w.minx - BULLET_R, w.maxx + BULLET_R);
+		float nz = Clamp(b.z, w.minz - BULLET_R, w.maxz + BULLET_R);
+		float dx = b.x - nx, dz = b.z - nz;
+		return (dx * dx + dz * dz <= BULLET_R * BULLET_R);
+	};
+
+	for (auto& w : walls_) {
+		if (!hitWall(w))
+			continue;
+		// どの面で当たったかを prev→cur の移動から推定し、符号反転
+		if (prevx < w.minx - BULLET_R && b.x >= w.minx - BULLET_R)
+			b.vx *= -1;
+		else if (prevx > w.maxx + BULLET_R && b.x <= w.maxx + BULLET_R)
+			b.vx *= -1;
+		if (prevz < w.minz - BULLET_R && b.z >= w.minz - BULLET_R)
+			b.vz *= -1;
+		else if (prevz > w.maxz + BULLET_R && b.z <= w.maxz + BULLET_R)
+			b.vz *= -1;
+		// 押し戻し（単純に前位置へ戻すだけでOK）
+		b.x = prevx;
+		b.z = prevz;
+		break;
 	}
 
-	// --------- 2D（スプライト） ---------
-	Sprite::PreDraw(dxCommon->GetCommandList());
-	/*if (sprite_) {
-		sprite_->Draw();
-	}*/
-	Sprite::PostDraw();
-
-	// --------- 3D（モデル） ---------
-	Model::PreDraw(dxCommon->GetCommandList());
-
-	 // ★ デバッグONなら DebugCamera の Camera、OFFなら通常 camera_
-	const KamataEngine::Camera& activeCam = (isDebugCameraActive_ && debugCamera_) ? debugCamera_->GetCamera() : camera_;
-
-	// ★ 空を最初に描く（深度の上書きを避けるため）
-	if (skydome_) {
-		skydome_->Draw(activeCam);
+	// 命中判定（プレイヤー／敵）
+	if (player_.alive && HitTank(b, player_)) {
+		player_.alive = false;
 	}
+	if (enemy_.alive && HitTank(b, enemy_)) {
+		enemy_.alive = false;
+	}
+	if (!player_.alive || !enemy_.alive)
+		b.alive = false;
+}
 
-	for (auto& row : worldTransformBlocks_) { // 外側＝縦方向
-		for (auto* wt : row) {                // 内側＝横方向
-			if (!wt)
-				continue; // 穴あき対応
-			modelBlock_->Draw(*wt, activeCam);
+bool GameScene::HitBoxExpanded(float x, float z, float rx, float rz) {
+	// 点(x,z) が「各壁AABBを rx,rz だけ膨張した領域」に入っているか
+	for (auto& w : walls_) {
+		if (x >= (w.minx - rx) && x <= (w.maxx + rx) && z >= (w.minz - rz) && z <= (w.maxz + rz)) {
+			return true; // 衝突
 		}
 	}
+	return false;
+}
 
-	
+bool GameScene::HitTank(const BulletXZ& b, const TankXZ& t) {
+	float nx = Clamp(b.x, t.x - TANK_HALF_W, t.x + TANK_HALF_W);
+	float nz = Clamp(b.z, t.z - TANK_HALF_D, t.z + TANK_HALF_D);
+	float dx = b.x - nx, dz = b.z - nz;
+	return (dx * dx + dz * dz <= BULLET_R * BULLET_R);
+}
 
-	
-	// 単体モデルの可視性テスト（必要なら一時的に有効化）
-	// model_->Draw(worldTransform_, debugCamera_->GetCamera(), textureHandle_);
+void GameScene::SyncWT_Tank(TankXZ& t) {
+	t.wt.translation_ = {t.x, Y_LIFT, t.z};
+	// dir4 を Y 回転へ（0:+X,1:+Z,2:-X,3:-Z）→ ラジアンで (−90°,0°, +90°, 180°) 等 好みで
+	static const float kRotY[4] = {0.0f, +3.14159265f * 0.5f, 3.14159265f, -3.14159265f * 0.5f};
+	t.wt.rotation_ = {0.0f, kRotY[t.dir4 & 3], 0.0f};
+	t.wt.scale_ = {0.8f, 0.6f, 1.0f}; // 車体の見た目
+	t.wt.TransferMatrix();
+}
 
-	// ★ フェーズが Game のときだけプレイヤーを描く（Death 中は描かない）
-	if (phase_ == ScenePhase::Game && player_) {
-		player_->Draw(activeCam);
-	}
-
-	for (auto& e : enemies_) {
-		e->Draw(activeCam);
-	}
-
-	// ★ Death パーティクルの描画
-	if (phase_ == ScenePhase::Death && modelSphere_) {
-		for (auto& dp : deathParticles_) {
-			if (dp.life <= 0.0f || !dp.wt)
-				continue;
-			dp.wt->TransferMatrix(); // 念のため
-			modelSphere_->Draw(*dp.wt, activeCam);
-		}
-	}
+void GameScene::MakeWallWT(const BoxXZ& w, KamataEngine::WorldTransform& out) {
+	out.Initialize();
+	const float cx = (w.minx + w.maxx) * 0.5f;
+	const float cz = (w.minz + w.maxz) * 0.5f;
+	const float sx = (w.maxx - w.minx);
+	const float sz = (w.maxz - w.minz);
+	out.translation_ = {cx, Y_LIFT, cz};
+	out.scale_ = {sx, 1.0f, sz};
+	out.TransferMatrix();
+}
 
 
-	Model::PostDraw();
+
+void GameScene::DrawCube(const KamataEngine::WorldTransform& wt, const KamataEngine::Camera& cam) {
+	if (!cubeModel_)
+		return;
+	cubeModel_->Draw(wt, cam);
+}
+
+void GameScene::BuildWallWT(const BoxXZ& w, KamataEngine::WorldTransform& out) {
+	const float cx = (w.minx + w.maxx) * 0.5f;
+	const float cz = (w.minz + w.maxz) * 0.5f;
+	const float sx = (w.maxx - w.minx);
+	const float sz = (w.maxz - w.minz);
+	out.translation_ = {cx, Y_LIFT, cz};
+	out.scale_ = {sx, 1.0f, sz};
+	out.TransferMatrix();
 }
