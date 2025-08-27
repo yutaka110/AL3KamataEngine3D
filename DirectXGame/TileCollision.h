@@ -9,11 +9,13 @@ struct TileField {
 	float originY = 0.0f;
 	float pitchX = 1.0f; // ★ AABBは pitch/2 で作る
 	float pitchY = 1.0f;
+	float halfX = 0.5f;                                  // ★ 追加：ブロック見た目の半径（X）
+	float halfY = 0.5f;                                  // ★ 追加：ブロック見た目の半径（Y）
 	const std::vector<std::vector<int>>* grid = nullptr; // 0:空白, 1:ブロック...
 };
 
 // プレイヤーAABB半径（見た目に合わせて微調整）
-inline KamataEngine::Vector3 PlayerHalfExtents() { return {0.45f, 0.90f, 0.0f}; }
+inline KamataEngine::Vector3 PlayerHalfExtents() { return {0.9f,0.9f, 0.0f}; }
 // めり込み・ビリつき防止の隙間
 inline float SkinWidth() { return 0.008f; }
 
@@ -24,7 +26,7 @@ void ResolvePlayerVsTilemap(Player& player, const TileField& tf);
 class Enemy; // 前方宣言
 
 // 敵の当たり（プレイヤーより少し小さめ推奨）
-inline KamataEngine::Vector3 EnemyHalfExtents() { return {0.45f, 0.85f, 0.0f}; }
+inline KamataEngine::Vector3 EnemyHalfExtents() { return {0.9f, 0.9f, 0.0f}; }
 
 // 敵とタイルの衝突解決（X→Y）。grounded/velocity を更新し、行列も転送する
 void ResolveEnemyVsTilemap(Enemy& enemy, const TileField& tf);

@@ -3,7 +3,7 @@
 #include "KamataEngine.h"
 #include <algorithm>
 #include <cmath>
-
+#include <cassert>
 using KamataEngine::Input;
 
 void Player::Initialize(KamataEngine::Model* model, uint32_t textureHandle, KamataEngine::Camera* camera, const KamataEngine::Vector3& pos) {
