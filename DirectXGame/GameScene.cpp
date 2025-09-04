@@ -322,6 +322,15 @@ void GameScene::Initialize() {
 	phase_ = ScenePhase::Title;
 	title_ = new TitleScene();
 	title_->Initialize(); // TitleScene は内部で title.png を読む実装【】
+
+	// 背景テクスチャを読み込み（例: background.png）
+	bgTex_ = KamataEngine::TextureManager::Load("background.png");
+	bgSprite_ = KamataEngine::Sprite::Create(bgTex_, {0.0f, 0.0f});
+
+	// 画面全面にフィット（左上基準で敷き詰め）
+	bgSprite_->SetAnchorPoint({0.0f, 0.0f});
+	bgSprite_->SetPosition({0.0f, 0.0f});
+	bgSprite_->SetSize({(float)screenW_, (float)screenH_});
 }
 
 void GameScene::Update() {
@@ -617,15 +626,23 @@ void GameScene::Draw() {
 	// --------- 2D（スプライト） ---------
 	Sprite::PreDraw(dxCommon->GetCommandList());
 
+
+	if (bgSprite_)
+		bgSprite_->Draw();   
+
 	// GameScene::Draw
 	if (phase_ == ScenePhase::Clear) {
 		clearSprite_->Draw();
 	}
 
+
+	
 	/*if (sprite_) {
 	    sprite_->Draw();
 	}*/
 	Sprite::PostDraw();
+
+	dxCommon = DirectXCommon::GetInstance();
 
 	// --------- 3D（モデル） ---------
 	Model::PreDraw(dxCommon->GetCommandList());
@@ -637,6 +654,8 @@ void GameScene::Draw() {
 	if (skydome_) {
 		skydome_->Draw(activeCam);
 	}
+
+	
 
 	for (auto& row : worldTransformBlocks_) { // 外側＝縦方向
 		for (auto* wt : row) {                // 内側＝横方向

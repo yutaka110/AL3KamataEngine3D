@@ -173,4 +173,7 @@ uint32_t goalTex_ = 0;
 KamataEngine::Sprite* titleSprite_ = nullptr;
 KamataEngine::Sprite* clearSprite_ = nullptr;
 
+// 背景
+KamataEngine::Sprite* bgSprite_ = nullptr;
+uint32_t bgTex_ = 0;
 };
