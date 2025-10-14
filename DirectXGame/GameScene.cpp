@@ -80,9 +80,9 @@ void GameScene::Initialize() {
 
 	// ★ 2. タイルIDとモデルの対応を設定
 	// 例: 0=床, 1=壁, 2=木など
-	tileModels_[0] = std::unique_ptr<Model>(Model::CreateFromOBJ("cube"));
-	tileModels_[1] = std::unique_ptr<Model>(Model::CreateFromOBJ("cube"));
-	tileModels_[2] = std::unique_ptr<Model>(Model::CreateFromOBJ("cube"));
+	tileModels_[0] = Model::CreateFromOBJ("cube", true);
+	tileModels_[1] = Model::CreateFromOBJ("cube", true);
+	tileModels_[2] = Model::CreateFromOBJ("cube", true);
 
 	// ★ エディタ側のパレット上限と選択IDを“使用可能ID”へクランプ
 	const int maxUsableId = static_cast<int>(tileModels_.size()) - 1;
@@ -109,6 +109,8 @@ void GameScene::Initialize() {
 		    },
 		    true);
 	}
+
+
 
 	cellSize_ = 1.0f; // 1マスの幅
 }
@@ -173,7 +175,7 @@ void GameScene::Draw() {
 	// ★ カメラを毎フレーム転送（真上固定）
 	camera_.translation_ = {0.0f, CAM_H, 0.0f};
 	camera_.rotation_ = {-3.14159265f * 0.5f, 0.0f, 0.0f}; // -90°俯瞰
-	camera_.TransferMatrix();
+	
 
 	auto* dxCommon = DirectXCommon::GetInstance();
 
@@ -181,7 +183,7 @@ void GameScene::Draw() {
 	Sprite::PostDraw();
 
 	Model::PreDraw(dxCommon->GetCommandList());
-
+	camera_.TransferMatrix();
 	//// 壁（永続WTで描画）
 	//for (size_t i = 0; i < walls_.size(); ++i) {
 	//	// もし壁を動かすなら BuildWallWT で更新してから描画
@@ -202,38 +204,35 @@ void GameScene::Draw() {
 
 	//cubeModel_->Draw(player_.wt, camera_);
 	
+	
+	tileWT_.Initialize(); // 一度だけ。以降は毎タイルで値を更新→TransferMatrix()
+
+	const float s = editor_.cellSize;
+	// 中央寄せしたいならオフセット、左上基準で良ければ 0.0f に
+	const float ox = (editor_.width * 0.5f - 0.5f) * s; // 中央寄せ
+	const float oz = (editor_.height * 0.5f - 0.5f) * s;
+
 	editor_.ForEach(
 	    [&](int x, int y, int id) {
-		    // 1) 無効IDは即スキップ（負数や未割当も含める）
-		    if (id <= 0)
+		    if (id <= 0 || id >= (int)tileModels_.size())
 			    return;
-		    const int maxId = static_cast<int>(tileModels_.size()) - 1;
-		    if (id > maxId) {
-			    // デバッグログ（必要なら削除）
-			    OutputDebugStringA(("Tile id out of range: " + std::to_string(id) + " > " + std::to_string(maxId) + "\n").c_str());
+		    auto* mdl = tileModels_[id]; // unique_ptrなら .get() / 生ポインタならそのまま
+		    if (!mdl)
 			    return;
-		    }
 
-		    // 2) unique_ptr の存在チェック
-		    auto& mdl = tileModels_[id];
-		    if (!mdl) {
-			    OutputDebugStringA(("Tile model is null for id: " + std::to_string(id) + "\n").c_str());
-			    return;
-		    }
+		    // ★ 毎セルごとに S/R/T を更新→TransferMatrix() だけ
+		    tileWT_.scale_ = {s, s, s};
+		    tileWT_.rotation_ = {0.0f, 0.0f, 0.0f};
+		    tileWT_.translation_ = {x * s - ox, 0.0f, y * s - oz};
+		    tileWT_.parent_ = nullptr;
+		    tileWT_.TransferMatrix();
 
-		    // 3) WT は必ず Initialize → TransferMatrix
-		    const float s = editor_.cellSize;
-		    WorldTransform wt{};
-		    wt.Initialize(); // ← これが抜けると内部バッファ未初期化で落ちる実装が多い
-		    wt.translation_ = {x * s, 0.0f, y * s};
-		    wt.scale_ = {s, s, s};
-		    wt.rotation_ = {0.0f, 0.0f, 0.0f};
-		    wt.TransferMatrix();
-
-		    // 4) 描画
-		    mdl->Draw(wt, camera_);
+		    mdl->Draw(tileWT_, camera_);
 	    },
-	    /*onlyNonZero=*/true);
+	    true);
+
+
+
 
 
 

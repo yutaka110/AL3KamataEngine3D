@@ -81,10 +81,15 @@ private:
 
 	 ge3::stage::StageEditor editor_; // マップチップ情報（ID配列）
 	// ★ 所有権を持たせる
-	std::vector<std::unique_ptr<KamataEngine::Model>> tileModels_;
+	 std::vector<KamataEngine::Model*> tileModels_;
 	float cellSize_ = 1.0f;          // 1マスの幅（X/Z方向）
 
-private:
+	 // タイル描画で使い回すWT（破棄タイミングをフレーム後にする）
+	 KamataEngine::WorldTransform tileWT_; // ←追加
+
+
+
+ private:
 	// ユーティリティ
 	static void DirVec(int dir4, float& dx, float& dz) {
 		switch (dir4 & 3) {
