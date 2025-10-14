@@ -7,7 +7,7 @@
 using namespace KamataEngine;
 #include "StageEditor.h"
 #include "StageEditorView.h"
-
+#include "./stage/include/math/MathUtil.h"
 
 GameScene::~GameScene() {
 	// モデル等はエンジン側のライフサイクルに追従（必要なら delete）
@@ -216,20 +216,21 @@ void GameScene::Draw() {
 	    [&](int x, int y, int id) {
 		    if (id <= 0 || id >= (int)tileModels_.size())
 			    return;
-		    auto* mdl = tileModels_[id]; // unique_ptrなら .get() / 生ポインタならそのまま
+		    auto* mdl = tileModels_[id];
 		    if (!mdl)
 			    return;
 
-		    // ★ 毎セルごとに S/R/T を更新→TransferMatrix() だけ
+		    const float s = editor_.cellSize;
 		    tileWT_.scale_ = {s, s, s};
 		    tileWT_.rotation_ = {0.0f, 0.0f, 0.0f};
-		    tileWT_.translation_ = {x * s - ox, 0.0f, y * s - oz};
-		    tileWT_.parent_ = nullptr;
-		    tileWT_.TransferMatrix();
+		    tileWT_.translation_ = {x * s, 0.0f, y * s};
+		    tileWT_.matWorld_ = MakeAffineMatrix(tileWT_.scale_, tileWT_.rotation_, tileWT_.translation_);
+		    tileWT_.TransferMatrix(); // ← GPUへアップロード
 
 		    mdl->Draw(tileWT_, camera_);
 	    },
 	    true);
+
 
 
 

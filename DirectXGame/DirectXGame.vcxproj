@@ -200,6 +200,8 @@
     <ClInclude Include="player.h" />
     <ClInclude Include="SceneID.h" />
     <ClInclude Include="Skydome.h" />
+    <ClInclude Include="stage\include\math\MathUtil.h" />
+    <ClInclude Include="stage\include\math\matrix.h" />
     <ClInclude Include="stage\include\StageEditor.h" />
     <ClInclude Include="stage\include\StageEditorView.h" />
     <ClInclude Include="TileCollision.h" />
