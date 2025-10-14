@@ -63,7 +63,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_WINDOWS;_DEBUG;USE_IMGUI;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)stage\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -86,7 +86,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)stage\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <Optimization>MinSpace</Optimization>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -111,6 +111,8 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapLoader.cpp" />
     <ClCompile Include="player.cpp" />
+    <ClCompile Include="stage\src\StageEditor.cpp" />
+    <ClCompile Include="stage\src\StageEditorView.cpp" />
     <ClCompile Include="TileCollision.cpp" />
     <ClCompile Include="TitleScene.cpp" />
   </ItemGroup>
@@ -198,6 +200,8 @@
     <ClInclude Include="player.h" />
     <ClInclude Include="SceneID.h" />
     <ClInclude Include="Skydome.h" />
+    <ClInclude Include="stage\include\StageEditor.h" />
+    <ClInclude Include="stage\include\StageEditorView.h" />
     <ClInclude Include="TileCollision.h" />
     <ClInclude Include="TitleScene.h" />
   </ItemGroup>

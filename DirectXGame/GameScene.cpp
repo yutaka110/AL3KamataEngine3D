@@ -5,6 +5,9 @@
 #include "kamataEngine.h"
 #include <imgui.h>
 using namespace KamataEngine;
+#include "StageEditor.h"
+#include "StageEditorView.h"
+
 
 GameScene::~GameScene() {
 	// モデル等はエンジン側のライフサイクルに追従（必要なら delete）
@@ -67,6 +70,47 @@ void GameScene::Initialize() {
 	phase_ = Phase::Reserve;
 	selSlot_ = 0;
 	execStep_ = execMini_ = 0;
+
+	
+
+
+	// id→モデル対応を準備（あなたの資産に合わせて）
+	tileModels_.clear();
+	tileModels_.resize(3);
+
+	// ★ 2. タイルIDとモデルの対応を設定
+	// 例: 0=床, 1=壁, 2=木など
+	tileModels_[0] = std::unique_ptr<Model>(Model::CreateFromOBJ("cube"));
+	tileModels_[1] = std::unique_ptr<Model>(Model::CreateFromOBJ("cube"));
+	tileModels_[2] = std::unique_ptr<Model>(Model::CreateFromOBJ("cube"));
+
+	// ★ エディタ側のパレット上限と選択IDを“使用可能ID”へクランプ
+	const int maxUsableId = static_cast<int>(tileModels_.size()) - 1;
+	editor_.paletteMax = (std::max)(1, maxUsableId); // 1..maxUsableId まで表示
+	if (editor_.selectedId > maxUsableId)
+		editor_.selectedId = (maxUsableId >= 1 ? 1 : 0);
+
+	// マップサイズとセルの大きさを決める（例: 32x24, 1.0fユニット=1タイル）
+	editor_.Initialize(32, 24, 1.0f);
+
+	// 必要なら CSV から初期レイアウトを読み込む（任意）
+	editor_.LoadCSV("stage/stage01.csv");
+
+	// LoadCSV の直後か、必要なタイミングで一度だけ実行
+	{
+		// CSV読み込み後にidをサニタイズ（tileModels_が既にあるのでOK）
+		editor_.ForEach(
+		    [&](int x, int y, int id) {
+			    if (id <= 0)
+				    return;
+			    if (id >= (int)tileModels_.size() || !tileModels_[id]) {
+				    editor_.Set(x, y, 0);
+			    }
+		    },
+		    true);
+	}
+
+	cellSize_ = 1.0f; // 1マスの幅
 }
 
 void GameScene::Update() {
@@ -111,6 +155,18 @@ void GameScene::Update() {
 		}
 	}
 	ImGui::End();
+
+	//    ※ ここで左ドラッグでペイント、右ドラッグで消しゴム、Save/Load が操作できる
+	editor_.UpdateEditorUI("Stage Editor");
+
+	// ImGui のエディタを回した後に安全側でクランプ
+	{
+		const int maxUsableId = static_cast<int>(tileModels_.size()) - 1;
+		if (editor_.paletteMax > maxUsableId)
+			editor_.paletteMax = (std::max)(1, maxUsableId);
+		if (editor_.selectedId > maxUsableId)
+			editor_.selectedId = (maxUsableId >= 1 ? 1 : 0);
+	}
 }
 
 void GameScene::Draw() {
@@ -126,23 +182,61 @@ void GameScene::Draw() {
 
 	Model::PreDraw(dxCommon->GetCommandList());
 
-	// 壁（永続WTで描画）
-	for (size_t i = 0; i < walls_.size(); ++i) {
-		// もし壁を動かすなら BuildWallWT で更新してから描画
-		DrawCube(*wallWts_[i], camera_);
-	}
+	//// 壁（永続WTで描画）
+	//for (size_t i = 0; i < walls_.size(); ++i) {
+	//	// もし壁を動かすなら BuildWallWT で更新してから描画
+	//	DrawCube(*wallWts_[i], camera_);
+	//}
 
-	if (player_.alive)
-		DrawCube(player_.wt, camera_);
-	if (enemy_.alive)
-		DrawCube(enemy_.wt, camera_);
+	//if (player_.alive)
+	//	DrawCube(player_.wt, camera_);
+	//if (enemy_.alive)
+	//	DrawCube(enemy_.wt, camera_);
 
-	// 弾（永続WTで描画）
-	for (auto& b : bullets_) {
-		if (!b.alive || !b.wt)
-			continue;
-		DrawCube(*b.wt, camera_);
-	}
+	//// 弾（永続WTで描画）
+	//for (auto& b : bullets_) {
+	//	if (!b.alive || !b.wt)
+	//		continue;
+	//	DrawCube(*b.wt, camera_);
+	//}
+
+	//cubeModel_->Draw(player_.wt, camera_);
+	
+	editor_.ForEach(
+	    [&](int x, int y, int id) {
+		    // 1) 無効IDは即スキップ（負数や未割当も含める）
+		    if (id <= 0)
+			    return;
+		    const int maxId = static_cast<int>(tileModels_.size()) - 1;
+		    if (id > maxId) {
+			    // デバッグログ（必要なら削除）
+			    OutputDebugStringA(("Tile id out of range: " + std::to_string(id) + " > " + std::to_string(maxId) + "\n").c_str());
+			    return;
+		    }
+
+		    // 2) unique_ptr の存在チェック
+		    auto& mdl = tileModels_[id];
+		    if (!mdl) {
+			    OutputDebugStringA(("Tile model is null for id: " + std::to_string(id) + "\n").c_str());
+			    return;
+		    }
+
+		    // 3) WT は必ず Initialize → TransferMatrix
+		    const float s = editor_.cellSize;
+		    WorldTransform wt{};
+		    wt.Initialize(); // ← これが抜けると内部バッファ未初期化で落ちる実装が多い
+		    wt.translation_ = {x * s, 0.0f, y * s};
+		    wt.scale_ = {s, s, s};
+		    wt.rotation_ = {0.0f, 0.0f, 0.0f};
+		    wt.TransferMatrix();
+
+		    // 4) 描画
+		    mdl->Draw(wt, camera_);
+	    },
+	    /*onlyNonZero=*/true);
+
+
+
 
 	Model::PostDraw();
 }

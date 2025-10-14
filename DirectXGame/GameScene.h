@@ -7,6 +7,8 @@
 #include <cmath>
 #include <deque>
 #include <vector>
+#include "stageEditor.h"   // 既存のStageEditor
+
 
 // 行動の種類
 enum class Act { MOVE_FWD, ROT_L, ROT_R, SHOOT };
@@ -32,6 +34,8 @@ struct TankXZ {
 	bool alive{true};
 	std::deque<Act> queue; // 行動予約（最大3）
 };
+
+
 
 class GameScene {
 public:
@@ -74,6 +78,12 @@ private:
 
 	// --- 入力（予約UI） ---
 	int selSlot_ = 0; // 予約スロット現在位置 0..2
+
+	 ge3::stage::StageEditor editor_; // マップチップ情報（ID配列）
+	// ★ 所有権を持たせる
+	std::vector<std::unique_ptr<KamataEngine::Model>> tileModels_;
+	float cellSize_ = 1.0f;          // 1マスの幅（X/Z方向）
+
 private:
 	// ユーティリティ
 	static void DirVec(int dir4, float& dx, float& dz) {
