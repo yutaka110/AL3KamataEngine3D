@@ -82,11 +82,23 @@ private:
 	 ge3::stage::StageEditor editor_; // マップチップ情報（ID配列）
 	// ★ 所有権を持たせる
 	 std::vector<KamataEngine::Model*> tileModels_;
-	float cellSize_ = 1.0f;          // 1マスの幅（X/Z方向）
+	float cellSize_ = 32.0f;          // 1マスの幅（X/Z方向）
 
 	 // タイル描画で使い回すWT（破棄タイミングをフレーム後にする）
 	 KamataEngine::WorldTransform tileWT_; // ←追加
 
+	 // GameScene.h
+	 struct TileItem {
+		 int id, x, y;
+	 };
+	 std::vector<TileItem> tiles_;
+	 std::vector<KamataEngine::WorldTransform> wts_;
+	 // id→高さ (Y) の対応表。必要な最大ID+1ぶん確保
+	 std::vector<float> tileHeightLUT_;
+
+	
+	 KamataEngine::Camera debugCamera_; // ←追加：デバッグカメラ
+	 bool useDebugCamera_ = false;      // ←追加：切り替えフラグ
 
 
  private:

@@ -81,7 +81,7 @@ void GameScene::Initialize() {
 	// ★ 2. タイルIDとモデルの対応を設定
 	// 例: 0=床, 1=壁, 2=木など
 	tileModels_[0] = Model::CreateFromOBJ("cube", true);
-	tileModels_[1] = Model::CreateFromOBJ("cube", true);
+	tileModels_[1] = Model::CreateFromOBJ("particle", true);
 	tileModels_[2] = Model::CreateFromOBJ("cube", true);
 
 	// ★ エディタ側のパレット上限と選択IDを“使用可能ID”へクランプ
@@ -110,9 +110,15 @@ void GameScene::Initialize() {
 		    true);
 	}
 
-
-
-	cellSize_ = 1.0f; // 1マスの幅
+	tileWT_.Initialize(); // 一度だけ。以降は毎タイルで値を更新→TransferMatrix()
+	                      // モデルを用意した後でOK。モデル数に合わせて確保
+	                      // デバッグカメラの初期位置（少し斜め上から）
+	debugCamera_.Initialize();
+	debugCamera_.farZ = 2000.0f;
+	debugCamera_.nearZ = 0.1f;
+	debugCamera_.translation_ = {5.0f, 8.0f, -5.0f};
+	debugCamera_.rotation_ = {-0.6f, 0.7f, 0.0f};
+	debugCamera_.TransferMatrix();
 }
 
 void GameScene::Update() {
@@ -169,13 +175,54 @@ void GameScene::Update() {
 		if (editor_.selectedId > maxUsableId)
 			editor_.selectedId = (maxUsableId >= 1 ? 1 : 0);
 	}
+
+	// カメラ切替（Tabキーでトグル）
+	if (Input::GetInstance()->TriggerKey(DIK_TAB)) {
+		useDebugCamera_ = !useDebugCamera_;
+	}
+
+	// デバッグカメラ操作
+	if (useDebugCamera_) {
+		const float moveSpeed = 0.2f;
+		const float rotSpeed = 0.02f;
+
+		// 回転：矢印キー
+		if (Input::GetInstance()->PushKey(DIK_UP))
+			debugCamera_.rotation_.x -= rotSpeed;
+		if (Input::GetInstance()->PushKey(DIK_DOWN))
+			debugCamera_.rotation_.x += rotSpeed;
+		if (Input::GetInstance()->PushKey(DIK_LEFT))
+			debugCamera_.rotation_.y -= rotSpeed;
+		if (Input::GetInstance()->PushKey(DIK_RIGHT))
+			debugCamera_.rotation_.y += rotSpeed;
+
+		// 移動：WASD・上下：QE
+		if (Input::GetInstance()->PushKey(DIK_W))
+			debugCamera_.translation_.z += moveSpeed * cos(debugCamera_.rotation_.y);
+		if (Input::GetInstance()->PushKey(DIK_S))
+			debugCamera_.translation_.z -= moveSpeed * cos(debugCamera_.rotation_.y);
+		if (Input::GetInstance()->PushKey(DIK_D))
+			debugCamera_.translation_.x += moveSpeed * sin(debugCamera_.rotation_.y);
+		if (Input::GetInstance()->PushKey(DIK_A))
+			debugCamera_.translation_.x -= moveSpeed * sin(debugCamera_.rotation_.y);
+		if (Input::GetInstance()->PushKey(DIK_Q))
+			debugCamera_.translation_.y -= moveSpeed;
+		if (Input::GetInstance()->PushKey(DIK_E))
+			debugCamera_.translation_.y += moveSpeed;
+
+		debugCamera_.TransferMatrix();
+	}
 }
 
 void GameScene::Draw() {
 	// ★ カメラを毎フレーム転送（真上固定）
 	camera_.translation_ = {0.0f, CAM_H, 0.0f};
 	camera_.rotation_ = {-3.14159265f * 0.5f, 0.0f, 0.0f}; // -90°俯瞰
-	
+	                                                       // ★ 使うカメラを選択
+	KamataEngine::Camera& activeCam = (useDebugCamera_) ? debugCamera_ : camera_;
+
+	// Model::PreDraw(dxCommon->GetCommandList());
+	activeCam.TransferMatrix();
 
 	auto* dxCommon = DirectXCommon::GetInstance();
 
@@ -205,43 +252,60 @@ void GameScene::Draw() {
 	//cubeModel_->Draw(player_.wt, camera_);
 	
 	
-	tileWT_.Initialize(); // 一度だけ。以降は毎タイルで値を更新→TransferMatrix()
+	
 
-	const float s = editor_.cellSize;
-	// 中央寄せしたいならオフセット、左上基準で良ければ 0.0f に
-	const float ox = (editor_.width * 0.5f - 0.5f) * s; // 中央寄せ
-	const float oz = (editor_.height * 0.5f - 0.5f) * s;
+	//const float s = editor_.cellSize;
+	//// 中央寄せしたいならオフセット、左上基準で良ければ 0.0f に
+	//const float ox = (editor_.width * 0.5f - 0.5f) * s; // 中央寄せ
+	//const float oz = (editor_.height * 0.5f - 0.5f) * s;
 
+	struct TileItem {
+		int id, x, y;
+	};
+	static std::vector<TileItem> tiles;
+	tiles.clear();
+
+	// 1) 描くセルを収集（editor/CSVは正しいので全て入るはず）
 	editor_.ForEach(
 	    [&](int x, int y, int id) {
 		    if (id <= 0 || id >= (int)tileModels_.size())
 			    return;
-		    auto* mdl = tileModels_[id];
-		    if (!mdl)
+		    if (!tileModels_[id])
 			    return;
-
-		    const float s = editor_.cellSize;
-		    tileWT_.scale_ = {s, s, s};
-		    tileWT_.rotation_ = {0.0f, 0.0f, 0.0f};
-		    tileWT_.translation_ = {x * s, 0.0f, y * s};
-		    tileWT_.matWorld_ = MakeAffineMatrix(tileWT_.scale_, tileWT_.rotation_, tileWT_.translation_);
-		    tileWT_.TransferMatrix(); // ← GPUへアップロード
-
-		    mdl->Draw(tileWT_, camera_);
+		    tiles.push_back({id, x, y});
 	    },
 	    true);
 
+	// 2) タイルごとに別の WT（=別CB）を用意
+	static std::vector<std::unique_ptr<KamataEngine::WorldTransform>> wts;
+	if (wts.size() < tiles.size()) {
+		size_t old = wts.size();
+		wts.resize(tiles.size());
+		for (size_t i = old; i < wts.size(); ++i) {
+			wts[i] = std::make_unique<KamataEngine::WorldTransform>();
+			wts[i]->Initialize();
+		}
+	}
 
+	// 3) 行列を作ってGPUへ転送（左上原点／少しだけYを持ち上げてZ-fight回避）
+	const float s = editor_.cellSize;
+	auto GridYtoWorldY = [&](int gy) { return (editor_.height - 1 - gy) * s; };
 
+	for (size_t i = 0; i < tiles.size(); ++i) {
+		auto& wt = *wts[i];
+		wt.scale_ = {s*0.5f, s*0.5f, s};
+		wt.rotation_ = {0, 0, 0};
+		wt.translation_ = {tiles[i].x * s, GridYtoWorldY(tiles[i].y), 0.01f};
+		wt.matWorld_ = ge3::math::MakeAffineMatrix(wt.scale_, wt.rotation_, wt.translation_);
+		wt.TransferMatrix();
 
-
-
-
+		auto* mdl = tileModels_[tiles[i].id];
+		if (mdl)
+			mdl->Draw(wt, camera_);
+	}
 
 	Model::PostDraw();
 }
-
-
 
 // ================= 予約入力 ====================
 void GameScene::HandleReserveInput() {
