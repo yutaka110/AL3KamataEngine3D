@@ -115,6 +115,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapLoader.cpp" />
     <ClCompile Include="player.cpp" />
+    <ClCompile Include="stage\src\StageEditor.cpp" />
     <ClCompile Include="TileCollision.cpp" />
     <ClCompile Include="TitleScene.cpp" />
   </ItemGroup>
@@ -206,6 +207,9 @@
     <ClInclude Include="player.h" />
     <ClInclude Include="SceneID.h" />
     <ClInclude Include="Skydome.h" />
+    <ClInclude Include="stage\include\math\MathUtil.h" />
+    <ClInclude Include="stage\include\math\matrix.h" />
+    <ClInclude Include="stage\include\StageEditor.h" />
     <ClInclude Include="TileCollision.h" />
     <ClInclude Include="TitleScene.h" />
   </ItemGroup>

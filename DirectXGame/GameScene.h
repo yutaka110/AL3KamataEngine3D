@@ -3,10 +3,12 @@
 #include "Player.h"
 #include "Skydome.h"
 // 先頭のインクルード付近に追加
+#include "./stage/include/StageEditor.h"
 #include "Enemy.h"
 #include "TitleScene.h"
 #include "goal.h"
 #include <vector>
+
 enum class ScenePhase { Title, Game, Death, Clear };
 class ClearScene; // 前方宣言
 // ゲームシーン
@@ -72,7 +74,7 @@ private:
 	// ★ タイトルシーンを中で所有（委譲用）
 	TitleScene* title_ = nullptr;
 
-    // クリアシーンを中で所有（委譲用）
+	// クリアシーンを中で所有（委譲用）
 	ClearScene* clear_ = nullptr;
 
 	// ▼ private: に追加
@@ -128,6 +130,10 @@ private:
 	// ★ 追加：クリア後（や任意のタイミング）に、プレイヤー/敵を初期スポーンへ戻すだけの共通関数
 	void ResetActorsToSpawn();
 
+	//================================
+	// パーティクル
+	//================================
+
 	// --------------- CLEAR パーティクル ---------------
 	struct ClearParticle {
 		KamataEngine::WorldTransform* wt = nullptr;
@@ -142,38 +148,55 @@ private:
 	void SpawnClearBurst(int count, const KamataEngine::Vector3& center);
 	void UpdateClearParticles(float dt);
 
-	 // 既存: Clear用パーティクル構造体や clearParticles_ がある前提
+	// 既存: Clear用パーティクル構造体や clearParticles_ がある前提
 
-// ---- Clear用エミッタ（常時発生制御）----
-struct ClearEmitter {
-    bool active = false;
-    float rate = 80.0f;     // 1秒あたりの生成数（お好みで）
-    float accum = 0.0f;     // 積算（小数を貯めて整数分だけ生成）
-    KamataEngine::Vector3 origin{0.0f, 0.0f, 10.0f}; // 画面中央付近（正射影ならz=10等）
-};
-ClearEmitter clearEmitter_;
+	// ---- Clear用エミッタ（常時発生制御）----
+	struct ClearEmitter {
+		bool active = false;
+		float rate = 80.0f;                              // 1秒あたりの生成数（お好みで）
+		float accum = 0.0f;                              // 積算（小数を貯めて整数分だけ生成）
+		KamataEngine::Vector3 origin{0.0f, 0.0f, 10.0f}; // 画面中央付近（正射影ならz=10等）
+	};
+	ClearEmitter clearEmitter_;
 
-// 画面を塗る用の 1x1 白テクスチャ（無ければ0のままでもOK）
-uint32_t clearTexWhite_ = 0;
-int screenW_ = 1280, screenH_ = 720; // 必要なら実取得に置換
+	// 画面を塗る用の 1x1 白テクスチャ（無ければ0のままでもOK）
+	uint32_t clearTexWhite_ = 0;
+	int screenW_ = 1280, screenH_ = 720; // 必要なら実取得に置換
 
+	// ゴール（タイル3）の位置
+	int goalTx_ = -1, goalTy_ = -1;
+	Goal* goal_ = nullptr;
+	uint32_t goalTex_ = 0;
+	// KamataEngine::Model* modelBlockGoals_ = nullptr;
+	KamataEngine::Sprite* titleSprite_ = nullptr;
+	KamataEngine::Sprite* clearSprite_ = nullptr;
 
+	// 背景
+	KamataEngine::Sprite* bgSprite_ = nullptr;
+	uint32_t bgTex_ = 0;
 
-//// エミッタ更新（dtごとに発生数を決めて Spawn）
-//void UpdateClearEmitter(float dt);
-//// 画面切替：Clear開始/終了
-//void StartClearScene();
-//void FinishClearToTitle();
+	//======================================
+	// タイル情報
+	//======================================
 
-// ゴール（タイル3）の位置
-int goalTx_ = -1, goalTy_ = -1;
-Goal* goal_ = nullptr;
-uint32_t goalTex_ = 0; 
-//KamataEngine::Model* modelBlockGoals_ = nullptr;
-KamataEngine::Sprite* titleSprite_ = nullptr;
-KamataEngine::Sprite* clearSprite_ = nullptr;
+	// マップチップ情報（ID配列）
+	ge3::stage::StageEditor editor_;
 
-// 背景
-KamataEngine::Sprite* bgSprite_ = nullptr;
-uint32_t bgTex_ = 0;
+	std::vector<KamataEngine::Model*> tileModels_;
+
+	// 1マスの幅（X/Z方向）
+	float cellSize_ = 32.0f;
+
+	// タイル描画で使い回すWT（破棄タイミングをフレーム後にする）
+	KamataEngine::WorldTransform tileWT_; // ←追加
+
+	// GameScene.h
+	struct TileItem {
+		int id, x, y;
+	};
+
+	std::vector<TileItem> tiles_;
+	std::vector<KamataEngine::WorldTransform> wts_;
+	// id→高さ (Y) の対応表。必要な最大ID+1ぶん確保
+	std::vector<float> tileHeightLUT_;
 };
