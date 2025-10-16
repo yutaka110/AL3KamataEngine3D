@@ -4,6 +4,7 @@
 #include "MapLoader.h"
 #include "TileCollision.h"
 #include <cmath> // ★ 追加：std::sin / std::cos 用
+#include "./math/MathUtil.h"
 using namespace KamataEngine;
 
 namespace { // ---- local helpers ----
@@ -319,7 +320,7 @@ void GameScene::Initialize() {
 	}
 
 	// ★ タイトル開始
-	phase_ = ScenePhase::Title;
+	phase_ = ScenePhase::Game;
 	title_ = new TitleScene();
 	title_->Initialize(); // TitleScene は内部で title.png を読む実装【】
 
@@ -331,6 +332,46 @@ void GameScene::Initialize() {
 	bgSprite_->SetAnchorPoint({0.0f, 0.0f});
 	bgSprite_->SetPosition({0.0f, 0.0f});
 	bgSprite_->SetSize({(float)screenW_, (float)screenH_});
+
+	// id→モデル対応を準備（あなたの資産に合わせて）
+	tileModels_.clear();
+	tileModels_.resize(3);
+
+	// ★ 2. タイルIDとモデルの対応を設定
+	// 例: 0=床, 1=壁, 2=木など
+	tileModels_[0] = Model::CreateFromOBJ("cube", true);
+	tileModels_[1] = Model::CreateFromOBJ("particle", true);
+	tileModels_[2] = Model::CreateFromOBJ("cube", true);
+
+	// ★ エディタ側のパレット上限と選択IDを“使用可能ID”へクランプ
+	const int maxUsableId = static_cast<int>(tileModels_.size()) - 1;
+	editor_.paletteMax = (std::max)(1, maxUsableId); // 1..maxUsableId まで表示
+	if (editor_.selectedId > maxUsableId)
+		editor_.selectedId = (maxUsableId >= 1 ? 1 : 0);
+
+	// マップサイズとセルの大きさを決める（例: 32x24, 1.0fユニット=1タイル）
+	editor_.Initialize(32, 24, 1.0f);
+
+	// 必要なら CSV から初期レイアウトを読み込む（任意）
+	editor_.LoadCSV("stage/stage01.csv");
+
+	// LoadCSV の直後か、必要なタイミングで一度だけ実行
+	{
+		// CSV読み込み後にidをサニタイズ（tileModels_が既にあるのでOK）
+		editor_.ForEach(
+		    [&](int x, int y, int id) {
+			    if (id <= 0)
+				    return;
+			    if (id >= (int)tileModels_.size() || !tileModels_[id]) {
+				    editor_.Set(x, y, 0);
+			    }
+		    },
+		    true);
+	}
+
+	tileWT_.Initialize(); // 一度だけ。以降は毎タイルで値を更新→TransferMatrix()
+	                      // モデルを用意した後でOK。モデル数に合わせて確保
+	                      // デバッグカメラの初期位置（少し斜め上から）
 }
 
 void GameScene::Update() {
@@ -373,6 +414,19 @@ void GameScene::Update() {
 
 	// ======= GAME 本編 =======
 	if (phase_ == ScenePhase::Game) {
+
+		//    ※ ここで左ドラッグでペイント、右ドラッグで消しゴム、Save/Load が操作できる
+		editor_.UpdateEditorUI("Stage Editor");
+
+		// ImGui のエディタを回した後に安全側でクランプ
+		{
+			const int maxUsableId = static_cast<int>(tileModels_.size()) - 1;
+			if (editor_.paletteMax > maxUsableId)
+				editor_.paletteMax = (std::max)(1, maxUsableId);
+			if (editor_.selectedId > maxUsableId)
+				editor_.selectedId = (maxUsableId >= 1 ? 1 : 0);
+		}
+
 		// 自キャラ
 		player_->Update();
 		if (goal_)
@@ -407,6 +461,8 @@ void GameScene::Update() {
 			if (wall || noGround)
 				e->EditVelocity().x = -e->EditVelocity().x;
 		}
+
+
 
 		// ===== 敵×自機の当たり判定 → ヒットで「消滅演出」開始 =====
 		const Vector3 pPos = player_->GetWorldTransform().translation_;
@@ -540,16 +596,12 @@ void GameScene::Update() {
 			}
 			deathParticles_.clear();
 
-			//// タイトルに戻す
-			// if (!title_) {
-			//	title_ = new TitleScene();
-			//	title_->Initialize();
-			// }
+			
 
 			// === 変更点：タイトルに戻さず、その場でラウンドをリセット ===
 			ResetAfterPlayerDeath(/*forceNow=*/true);
 
-			// phase_ = ScenePhase::Title;
+			
 		}
 	}
 	// ===== CLEAR フェーズ更新 =====
@@ -627,8 +679,8 @@ void GameScene::Draw() {
 	Sprite::PreDraw(dxCommon->GetCommandList());
 
 
-	if (bgSprite_)
-		bgSprite_->Draw();   
+	/*if (bgSprite_)
+		bgSprite_->Draw();   */
 
 	// GameScene::Draw
 	if (phase_ == ScenePhase::Clear) {
@@ -655,6 +707,50 @@ void GameScene::Draw() {
 		skydome_->Draw(activeCam);
 	}
 
+	struct TileItem {
+		int id, x, y;
+	};
+	static std::vector<TileItem> tiles;
+	tiles.clear();
+
+	// 1) 描くセルを収集（editor/CSVは正しいので全て入るはず）
+	editor_.ForEach(
+	    [&](int x, int y, int id) {
+		    if (id <= 0 || id >= (int)tileModels_.size())
+			    return;
+		    if (!tileModels_[id])
+			    return;
+		    tiles.push_back({id, x, y});
+	    },
+	    true);
+
+	// 2) タイルごとに別の WT（=別CB）を用意
+	static std::vector<std::unique_ptr<KamataEngine::WorldTransform>> wts;
+	if (wts.size() < tiles.size()) {
+		size_t old = wts.size();
+		wts.resize(tiles.size());
+		for (size_t i = old; i < wts.size(); ++i) {
+			wts[i] = std::make_unique<KamataEngine::WorldTransform>();
+			wts[i]->Initialize();
+		}
+	}
+
+	// 3) 行列を作ってGPUへ転送（左上原点／少しだけYを持ち上げてZ-fight回避）
+	const float s = editor_.cellSize;
+	auto GridYtoWorldY = [&](int gy) { return (editor_.height - 1 - gy) * s; };
+
+	for (size_t i = 0; i < tiles.size(); ++i) {
+		auto& wt = *wts[i];
+		wt.scale_ = {s * 0.5f, s * 0.5f, s};
+		wt.rotation_ = {0, 0, 0};
+		wt.translation_ = {tiles[i].x * s, GridYtoWorldY(tiles[i].y), 0.01f};
+		wt.matWorld_ = ge3::math::MakeAffineMatrix(wt.scale_, wt.rotation_, wt.translation_);
+		wt.TransferMatrix();
+
+		auto* mdl = tileModels_[tiles[i].id];
+		if (mdl)
+			mdl->Draw(wt, camera_);
+	}
 	
 
 	for (auto& row : worldTransformBlocks_) { // 外側＝縦方向

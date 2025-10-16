@@ -200,6 +200,10 @@
     <ClInclude Include="Enemy.h" />
     <ClInclude Include="Fade.h" />
     <ClInclude Include="GameScene.h" />
+    <ClInclude Include="game\include\player\PlayerInput.h" />
+    <ClInclude Include="game\include\player\PlayerPhysics.h" />
+    <ClInclude Include="game\include\player\PlayerState.h" />
+    <ClInclude Include="game\include\player\PlayerTypes.h" />
     <ClInclude Include="Goal.h" />
     <ClInclude Include="IScene.h" />
     <ClInclude Include="MapLoader.h" />

@@ -69,7 +69,7 @@ private:
 	bool isDebugCameraActive_ = false;
 
 	// ★ 現在のフェーズ（最初はタイトル）
-	ScenePhase phase_ = ScenePhase::Title;
+	ScenePhase phase_ = ScenePhase::Game;
 
 	// ★ タイトルシーンを中で所有（委譲用）
 	TitleScene* title_ = nullptr;
