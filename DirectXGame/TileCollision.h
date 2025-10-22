@@ -1,6 +1,6 @@
 #pragma once
 #include "kamataEngine.h"
-#include "player.h"
+#include "player/player.h"
 #include <vector>
 
 // タイル座標系（見た目の並びに合わせる：中心=origin + pitch*index）

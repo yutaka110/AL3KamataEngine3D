@@ -1,6 +1,6 @@
 #pragma once
 #include "KamataEngine.h"
-#include "Player.h"
+#include "player/Player.h"
 #include "Skydome.h"
 // 先頭のインクルード付近に追加
 #include "./stage/include/StageEditor.h"
@@ -56,7 +56,7 @@ private:
 	uint32_t voiceHandle_ = 0;
 
 	// 自動キャラ
-	Player* player_ = nullptr;
+	std::unique_ptr<Player> player_= nullptr;
 
 	// 2次元配列形式（行×列）
 	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;

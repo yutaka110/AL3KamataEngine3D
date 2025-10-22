@@ -121,7 +121,7 @@ GameScene::~GameScene() {
 	delete sprite_;
 	delete model_;
 	// 自キャラの解放
-	delete player_;
+	//delete player_;
 	delete debugCamera_;
 	delete modelBlock_;
 	delete skydome_;
@@ -299,7 +299,7 @@ void GameScene::Initialize() {
 	skydome_->Initialize("skydome", /*scale=*/1200.0f); // シーンに合わせて調整
 
 	// 自キャラの生成
-	player_ = new Player();
+	player_ = std::make_unique<Player>();
 
 	// int sx = 0, sy = (int)mapData_.size() - 1; // 最下段の0列目タイル
 	KamataEngine::Vector3 spawnPos{
