@@ -19,6 +19,13 @@ inline Params DefaultParams() {
 
 	p.coyoteFrames = 6;
 	p.jumpBufFrames = 6;
+	p.extraJumps = 1;
+
+	// 回避デフォ
+	p.dodgeSpeed = 0.60f;
+	p.dodgeFrames = 11; 
+	p.dodgeCooldownFrames = 20;
+	p.dodgeIFrames = 8;
 	return p;
 }
 } // namespace game::player

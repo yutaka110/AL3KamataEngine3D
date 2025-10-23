@@ -25,4 +25,10 @@ void gp::InputReader::Read(gp::Input& out) {
 	const bool tr = in->TriggerKey(DIK_SPACE) || in->TriggerKey(DIK_W) || in->TriggerKey(DIK_UP);
 
 	out.jumpPressed = tr;
+
+	// 回避：LeftShift / 右Shift どちらでも
+	if (in->TriggerKey(DIK_LSHIFT) || in->TriggerKey(DIK_RSHIFT)) {
+		out.dodgePressed = true;
+	}
+
 }
