@@ -177,6 +177,8 @@ void GameScene::Initialize() {
 	// クリア用スプライト
 	clearSprite_ = Sprite::Create(TextureManager::Load("clear.png"), {0.0f, 0.0f});
 
+
+
 	// ワールドトランスファームの初期化
 	worldTransform_.Initialize();
 
@@ -320,7 +322,7 @@ void GameScene::Initialize() {
 	}
 
 	// ★ タイトル開始
-	phase_ = ScenePhase::Game;
+	phase_ = ScenePhase::Title;
 	title_ = new TitleScene();
 	title_->Initialize(); // TitleScene は内部で title.png を読む実装【】
 
@@ -372,6 +374,8 @@ void GameScene::Initialize() {
 	tileWT_.Initialize(); // 一度だけ。以降は毎タイルで値を更新→TransferMatrix()
 	                      // モデルを用意した後でOK。モデル数に合わせて確保
 	                      // デバッグカメラの初期位置（少し斜め上から）
+
+	
 }
 
 void GameScene::Update() {
@@ -678,17 +682,11 @@ void GameScene::Draw() {
 	// --------- 2D（スプライト） ---------
 	Sprite::PreDraw(dxCommon->GetCommandList());
 
-
-	/*if (bgSprite_)
-		bgSprite_->Draw();   */
-
 	// GameScene::Draw
 	if (phase_ == ScenePhase::Clear) {
 		clearSprite_->Draw();
 	}
 
-
-	
 	/*if (sprite_) {
 	    sprite_->Draw();
 	}*/
@@ -751,7 +749,6 @@ void GameScene::Draw() {
 		if (mdl)
 			mdl->Draw(wt, camera_);
 	}
-	
 
 	for (auto& row : worldTransformBlocks_) { // 外側＝縦方向
 		for (auto* wt : row) {                // 内側＝横方向

@@ -175,6 +175,9 @@ private:
 	KamataEngine::Sprite* bgSprite_ = nullptr;
 	uint32_t bgTex_ = 0;
 
+	// ダストモデル用メンバを追加
+	std::unique_ptr<KamataEngine::Model> dustModel_;
+
 	//======================================
 	// タイル情報
 	//======================================

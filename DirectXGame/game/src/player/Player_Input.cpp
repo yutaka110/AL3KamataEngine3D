@@ -10,7 +10,8 @@ void gp::InputReader::Read(gp::Input& out) {
 	// 初期化
 	out.axisX = 0;
 	out.jumpPressed = false;
-
+	out.dodgePressed = false;
+	out.jumpHeld = false;
 	// ※ここがポイント：game::player::Input（構造体）と名前が衝突していたので
 	//   KamataEngine 側の Input を「完全修飾名」で呼びます。
 	auto* in = KamataEngine::Input::GetInstance();
@@ -25,6 +26,11 @@ void gp::InputReader::Read(gp::Input& out) {
 	const bool tr = in->TriggerKey(DIK_SPACE) || in->TriggerKey(DIK_W) || in->TriggerKey(DIK_UP);
 
 	out.jumpPressed = tr;
+
+	// 押しっぱなし（ジャンプカット用）
+	if (in->PushKey(DIK_SPACE) || in->PushKey(DIK_W) || in->PushKey(DIK_UP)) {
+	    out.jumpHeld = true;
+	}
 
 	// 回避：LeftShift / 右Shift どちらでも
 	if (in->TriggerKey(DIK_LSHIFT) || in->TriggerKey(DIK_RSHIFT)) {

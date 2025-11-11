@@ -12,9 +12,11 @@ void gp::ApplyFriction(gp::Data& d, const gp::Params& p) {
 }
 
 void gp::ApplyGravity(gp::Data& d, const gp::Params& p) {
-	d.vy += p.gravity;
-	if (d.vy < p.maxFallSpeed)
-		d.vy = p.maxFallSpeed;
+	const bool gliding = (d.state == State::Gliding) || d.gliding;
+	const float g = gliding ? p.glideGravity : p.gravity;
+	const float vmax = gliding ? p.glideMaxFallSpeed : p.maxFallSpeed;
+	d.vy += g;
+	if (d.vy < vmax) d.vy = vmax;
 }
 
 void gp::IntegratePosition(float& x, float& y, gp::Data& d) {

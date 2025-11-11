@@ -27,6 +27,11 @@ void gp::StepState(gp::Data& d, const gp::Input& in, const gp::Params& p) {
 		d.state = gp::State::OnGround;
 		d.coyoteCounter = p.coyoteFrames;
 
+		// 地上に着いたら滑空を強制解除
+		d.gliding = false;
+		d.glideCounter = 0;
+
+
 		// 地上にいる間は追加ジャンプ回数をリセット
 		d.jumpsRemain = p.extraJumps;
 	} else {
@@ -51,9 +56,43 @@ void gp::StepState(gp::Data& d, const gp::Input& in, const gp::Params& p) {
 	if (in.axisX != 0) {
 		const bool sameDir = (d.vx == 0.0f) ? true : ((d.vx > 0.0f) == (in.axisX > 0));
 		const float a = sameDir ? p.accelX : p.brakeX;
-		d.vx += a * static_cast<float>(in.axisX);
+		//d.vx += a * static_cast<float>(in.axisX);
+		float gain = a;
+		if (d.state == State::Gliding) gain *= 0.7f; // ← 横制御を少し鈍らせる（任意）
+		d.vx += gain * static_cast<float>(in.axisX);
 		d.vx = std::clamp(d.vx, -p.maxSpeedX, p.maxSpeedX);
+
 	}
+
+	 // --- 滑空の開始条件 ---
+	    // ・空中
+	     // ・ジャンプ長押し中（in.jumpHeld）
+	     // ・上昇がほぼ止まった or 落下中（vy <= glideStartVy）
+	     // ・攻撃/回避/壁スライドでない
+	    if (!d.grounded && in.jumpHeld &&d.vy <= p.glideStartVy&&d.state != State::Dodging ) {
+		d.gliding = true;
+		d.state = State::Gliding;
+		
+	}
+	 // --- 滑空の維持/終了 ---
+	  if (d.gliding) {
+		 ++d.glideCounter;
+		 // 解除条件：ボタン離し／制限時間到達／地上／回避/攻撃/壁接触で上書き
+		   const bool timeOver = (p.glideMaxFrames > 0 && d.glideCounter >= p.glideMaxFrames);
+		if (!in.jumpHeld || d.grounded || timeOver  || d.state == State::Dodging ) {
+			d.gliding = false;
+			d.glideCounter = 0;
+			if (!d.grounded && d.state == State::Gliding) d.state = State::InAir;
+			
+		}
+		else {
+			 // 維持中は状態を固定
+			   d.state = State::Gliding;
+			
+		}
+		
+	}
+
 
 	// ジャンプ判定（地上/コヨーテ/空中追加ジャンプ）
 	if (d.jumpBufferCounter > 0) {
@@ -65,19 +104,21 @@ void gp::StepState(gp::Data& d, const gp::Input& in, const gp::Params& p) {
 			d.jumpBufferCounter = 0;
 			if (canAirJump) {
 				--d.jumpsRemain; // 空中で消費
-				
 			}
-			
-		}
-		else {
+
+		} else {
 			--d.jumpBufferCounter;
-			
 		}
-		
-	}
-	else if (d.jumpBufferCounter > 0) {
+
+	} else if (d.jumpBufferCounter > 0) {
 		--d.jumpBufferCounter;
 	}
+
+	//// 追加：ジャンプカット
+	//// 上昇中（vy>0）にジャンプボタンが離されていたら、上昇を短く切る
+	//if (!d.grounded && d.vy > 0.0f && !in.jumpHeld) {
+	//	d.vy *= p.jumpCutFactor; // 例：0.55倍
+	//}
 
 	// 回避トリガ（地上優先だが、必要なら空中でも許可できる）
 	if (in.dodgePressed && d.cooldownCounter == 0) {

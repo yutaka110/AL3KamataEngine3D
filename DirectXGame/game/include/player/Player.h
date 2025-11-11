@@ -6,6 +6,7 @@
 
 class Player {
 public:
+
 	// 既存APIを温存（pos あり版）
 	void Initialize(KamataEngine::Model* model, uint32_t textureHandle, KamataEngine::Camera* camera, const KamataEngine::Vector3& pos);
 	void Update(); // 既存呼び出し箇所をそのまま使える
@@ -17,6 +18,8 @@ public:
 	KamataEngine::Vector3& EditVelocity() { return velocityProxy_; } // 互換用
 	bool IsGrounded() const { return data_.grounded; }
 	void SetGrounded(bool g) { data_.grounded = g; }
+	bool IsInvincible() const { return data_.invincible; }
+    bool IsDodging()   const { return data_.state == game::player::State::Dodging; }
 
 private:
 	// 既存フィールド
@@ -32,4 +35,5 @@ private:
 	// 互換性のための一時アクセサ（外部が EditVelocity() を使っている場合の“窓”）
 	// 実体は data_.vx, data_.vy に同期します。
 	KamataEngine::Vector3 velocityProxy_{0.0f, 0.0f, 0.0f};
+
 };

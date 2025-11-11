@@ -58,7 +58,26 @@ struct StageEditor {
 
 	// ===== ImGuiエディタ（2Dキャンバス）=====
 	void UpdateEditorUI(const char* windowTitle);
+
+public:
+	// 編集は今後 Set() ではなくコレ経由で行う（履歴を積む）
+	void ApplySet(int x, int y, int id);
+
+	// 操作
+	void Undo();
+	void Redo();
+	void ClearHistory(); // Load/Clear 後などに
+
+private:
+	struct EditDiff {
+		int x, y;
+		int oldId;
+		int newId;
+	};
+	std::vector<EditDiff> undoStack_;
+	std::vector<EditDiff> redoStack_;
 };
 
 } // namespace stage
 } // namespace ge3
+

@@ -6,6 +6,7 @@
 #include "math/MathUtil.h"
 #include <algorithm>
 #include <cassert>
+#include <random>
 
 using KamataEngine::Vector3;
 using ge3::math::MakeAffineMatrix;
@@ -48,7 +49,7 @@ void Player::Update() {
 	game::player::StepState(data_, in, params_);
 
 	// 3) 物理（摩擦・重力・積分・床クランプ）
-	if (in.axisX == 0) {
+	if (in.axisX == 0 && data_.state != game::player::State::Dodging && data_.state != game::player::State::Gliding) {
 		game::player::ApplyFriction(data_, params_);
 	}
 	game::player::ApplyGravity(data_, params_);
@@ -67,6 +68,11 @@ void Player::Update() {
 	// 互換用プロキシへ反映
 	velocityProxy_.x = data_.vx;
 	velocityProxy_.y = data_.vy;
+
+	
 }
 
 void Player::Draw(const KamataEngine::Camera& cam) { model_->Draw(worldTransform_, cam, textureHandle_); }
+
+
+

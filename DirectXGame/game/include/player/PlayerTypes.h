@@ -3,7 +3,7 @@
 
 namespace game::player {
 
-enum class State : uint8_t { OnGround, InAir, Dodging };
+enum class State : uint8_t { OnGround, InAir, Dodging, Gliding };
 
 struct Params {
 	// 水平
@@ -28,12 +28,22 @@ struct Params {
    int   dodgeFrames;         // 回避の持続フレーム数
    int   dodgeCooldownFrames; // クールダウン
    int   dodgeIFrames;        // 無敵フレーム（回避開始から）
+
+   // ジャンプカット（ボタン離しで上昇を短く）
+   float jumpCutFactor;
+
+   // 滑空
+   float glideGravity;       // 滑空中の重力（負値の小さい絶対値 = ゆっくり落下）
+   float glideMaxFallSpeed;  // 滑空時の終端落下速度（負値の大きさ）
+   int   glideMaxFrames;     // 滑空できる最大フレーム（0なら無制限）
+   float glideStartVy;       // これ以下の上昇/落下速度なら開始可（例：+0.1f以下＝ほぼ頂点～落下）
 };
 
 struct Input {
 	int axisX{};        // -1,0,1
 	bool jumpPressed{}; // フレーム内トリガ
 	bool dodgePressed{};
+	bool jumpHeld{};
 };
 
 struct Data {
@@ -53,6 +63,10 @@ struct Data {
     int   cooldownCounter{};   // クールダウン
     int   iFrameCounter{};     // 無敵残り
     bool  invincible{};        // 外部公開向けフラグ
+
+	
+	bool  gliding{false};
+    int   glideCounter{0};
 };
 
 } // namespace game::player
