@@ -1,205 +1,158 @@
+// =============================================
+// File: GameScene.h （置き換え）
+// =============================================
 #pragma once
 #include "KamataEngine.h"
-#include "player/Player.h"
-#include "Skydome.h"
-// 先頭のインクルード付近に追加
-#include "./stage/include/StageEditor.h"
-#include "Enemy.h"
-#include "TitleScene.h"
-#include "goal.h"
+#include <algorithm>
+#include <cmath>
+#include <deque>
 #include <vector>
+#include "stageEditor.h"   // 既存のStageEditor
 
-enum class ScenePhase { Title, Game, Death, Clear };
-class ClearScene; // 前方宣言
-// ゲームシーン
+
+// 行動の種類
+enum class Act { MOVE_FWD, ROT_L, ROT_R, SHOOT };
+
+// 新:
+struct BoxXZ {
+	float minx, minz, maxx, maxz; // 壁のAABB（XZのみ）
+};
+
+// 弾（XZ 平面でだけ動く）
+struct BulletXZ {
+	float x{}, z{};   // 位置（XZ）
+	float vx{}, vz{}; // 速度（XZ）
+	bool alive{true};
+	std::unique_ptr<KamataEngine::WorldTransform> wt; // ← 追加
+};
+
+// タンク（XZ平面のみで管理）
+struct TankXZ {
+	KamataEngine::WorldTransform wt; // 描画用（Box）
+	float x{}, z{};                  // 位置（XZ）
+	int dir4{0};                     // 0:+X, 1:+Z, 2:-X, 3:-Z（90°単位）
+	bool alive{true};
+	std::deque<Act> queue; // 行動予約（最大3）
+};
+
+
+
 class GameScene {
-
 public:
 	~GameScene();
-	// 初期化
 	void Initialize();
-
-	// 更新
 	void Update();
-
-	// 描画
 	void Draw();
 
-	// スプライト
-	KamataEngine::Sprite* sprite_ = nullptr;
-
-	// 3Dモデル
-	KamataEngine::Model* model_ = nullptr;
-
-	// ワールドトランスフォーム
-	KamataEngine::WorldTransform worldTransform_;
-
-	// デバッグカメラ
-	KamataEngine::DebugCamera* debugCamera_ = nullptr;
-
-	// カメラ
-	KamataEngine::Camera camera_;
-
-	// 3Dモデル
-	// KamataEngine::Model* modelSkydome_ = nullptr;
-
-	Skydome* skydome_ = nullptr;
-
 private:
-	// テクスチャハンドル
-	uint32_t textureHandle_ = 0;
+	// --- 定数（必要なら好みで調整） ---
+	const float CELL = 1.0f;         // 1マスの幅
+	const int MAP_W = 10;            // マップ横マス
+	const int MAP_H = 10;            // マップ縦マス
+	const int STEP_N = 8;            // 1手の移動を分割するミニフレーム数
+	const float BULLET_SPEED = 6.0f; // 弾速（セル/手）
+	const float BULLET_R = 0.12f;    // 弾半径
+	const float TANK_HALF_W = 0.4f;  // タンク当たり（半幅）
+	const float TANK_HALF_D = 0.4f;  // タンク当たり（半奥行）
+	const float Y_LIFT = 0.5f;       // モデルの持ち上げ量（見映え）
+	                                 // --- モデル／描画 ---
+	                                 // GameScene.h の private 定数群に追加
+	const float CAM_H = 12.0f;       // カメラの高さ（好みで調整）
 
-	// サウンドハンドル
-	uint32_t soundDataHandle_ = 0;
+	KamataEngine::Model* cubeModel_ = nullptr; // 壁／タンク／弾 全部 Cube でOK
+	KamataEngine::Camera camera_{};            // 真上固定（正射影が無い場合は高所からの見下ろし）
 
-	// 音声再生ハンドル
-	uint32_t voiceHandle_ = 0;
+	// --- ゲーム要素 ---
+	std::vector<BoxXZ> walls_{};
+	std::vector<std::unique_ptr<KamataEngine::WorldTransform>> wallWts_; // ← 追加
+	TankXZ player_{};
+	TankXZ enemy_{};
+	std::vector<BulletXZ> bullets_{};
 
-	// 自動キャラ
-	std::unique_ptr<Player> player_= nullptr;
+	// --- ターン管理 ---
+	enum class Phase { Reserve, Execute, Result };
+	Phase phase_ = Phase::Reserve;
 
-	// 2次元配列形式（行×列）
-	std::vector<std::vector<KamataEngine::WorldTransform*>> worldTransformBlocks_;
+	int execStep_ = 0; // 0..2（各ターンで最大3手）
+	int execMini_ = 0; // 0..STEP_N-1（ミニフレーム進行）
 
-	KamataEngine::Model* modelBlock_ = nullptr;
+	// --- 入力（予約UI） ---
+	int selSlot_ = 0; // 予約スロット現在位置 0..2
 
-	std::vector<std::vector<int>> mapData_;
+	 ge3::stage::StageEditor editor_; // マップチップ情報（ID配列）
+	// ★ 所有権を持たせる
+	 std::vector<KamataEngine::Model*> tileModels_;
+	float cellSize_ = 32.0f;          // 1マスの幅（X/Z方向）
 
-	// ★ デバッグカメラ有効フラグ（デフォルトOFF）
-	bool isDebugCameraActive_ = false;
+	 // タイル描画で使い回すWT（破棄タイミングをフレーム後にする）
+	 KamataEngine::WorldTransform tileWT_; // ←追加
 
-	// ★ 現在のフェーズ（最初はタイトル）
-	ScenePhase phase_ = ScenePhase::Game;
+	 // GameScene.h
+	 struct TileItem {
+		 int id, x, y;
+	 };
+	 std::vector<TileItem> tiles_;
+	 std::vector<KamataEngine::WorldTransform> wts_;
+	 // id→高さ (Y) の対応表。必要な最大ID+1ぶん確保
+	 std::vector<float> tileHeightLUT_;
 
-	// ★ タイトルシーンを中で所有（委譲用）
-	TitleScene* title_ = nullptr;
+	
+	 KamataEngine::Camera debugCamera_; // ←追加：デバッグカメラ
+	 bool useDebugCamera_ = false;      // ←追加：切り替えフラグ
 
-	// クリアシーンを中で所有（委譲用）
-	ClearScene* clear_ = nullptr;
 
-	// ▼ private: に追加
-	float tileOriginX_ = 0.0f, tileOriginY_ = 0.0f;
-	float tilePitchX_ = 1.0f, tilePitchY_ = 1.0f;
-	float tileHalfX_ = 0.8f, tileHalfY_ = 0.8f; // cube の scale から決める
+ private:
+	// ユーティリティ
+	static void DirVec(int dir4, float& dx, float& dz) {
+		switch (dir4 & 3) {
+		case 0:
+			dx = +1;
+			dz = 0;
+			break; // +X
+		case 1:
+			dx = 0;
+			dz = +1;
+			break; // +Z
+		case 2:
+			dx = -1;
+			dz = 0;
+			break; // -X
+		default:
+			dx = 0;
+			dz = -1;
+			break; // -Z
+		}
+	}
+	static float Clamp(float v, float a, float b) { return (v < a) ? a : (v > b) ? b : v; }
 
-	//-----敵-----
-	std::vector<std::unique_ptr<Enemy>> enemies_;
+	// 予約UI（キーボード簡易版 + ImGui）
+	void HandleReserveInput();
 
-	struct DeathParticle {
-		KamataEngine::WorldTransform* wt = nullptr; // ★ ポインタ化
-		KamataEngine::Vector3 vel{};
-		float life = 0.0f;    // 残り寿命（秒）
-		float maxLife = 0.0f; // 初期寿命（秒）
-	};
-	std::vector<DeathParticle> deathParticles_;
-	KamataEngine::Model* modelSphere_ = nullptr; // 球モデル
+	// 敵AI：シンプルに3手埋める
+	void BuildEnemyOrder();
 
-	// GameScene.h の private に追記
-	float deathElapsed_ = 0.0f;  // 死亡演出の経過秒
-	float deathMinTime_ = 0.80f; // 最低でもこの時間は Death を続ける（秒）
+	// 実行フェーズの1ミニフレームを進める（戻り値：決着したらtrue）
+	bool TickExecuteMiniFrame();
 
-	// bullets
-	// GameScene.h の private: 末尾あたりに追加
-	struct Bullet {
-		KamataEngine::Vector3 pos;
-		KamataEngine::Vector3 vel; // XY で進む（Zは固定）
-		float radius = 0.18f;      // 見た目小さめが気持ちいい
-		int bounces = 0;           // 反射回数
-		bool alive = true;
-	};
+	// MOVE の1ミニフレーム
+	void MoveOneMini(TankXZ& t);
 
-	std::vector<Bullet> bullets_;
+	// 弾の更新＋壁反射＋命中（戻り値：誰か死んだらtrue）
+	bool UpdateBulletsMini();
 
-	// 弾の基本パラメータ
-	float bulletSpeed_ = 6.0f; // タイル/秒
-	int bulletMaxBounce_ = 3;
-	float bulletSkin_ = 0.02f;   // めり込み防止
-	float fireCooldown_ = 0.25f; // 連射間隔（秒）
-	float fireTimer_ = 0.0f;
+	// 反射（壁は軸揃えAABBなので符号反転のみ）
+	void ReflectBullet(BulletXZ& b, float prevx, float prevz);
 
-	// 簡易エイム：最後に押した移動キーの向きを記憶（初期は+X）
-	KamataEngine::Vector3 lastAimDir_{1.0f, 0.0f, 0.0f};
+	// 衝突ヘルパ
+	bool HitBoxExpanded(float x, float z, float rx, float rz); // 円中心 vs 膨張AABB（壁）
+	bool HitTank(const BulletXZ& b, const TankXZ& t);
 
-	// ★ リスポーン用スポーン位置
-	KamataEngine::Vector3 playerSpawn_{};
-	std::vector<KamataEngine::Vector3> enemySpawns_;
-
-	// ★ プレイヤー死亡後のリセット関数
-	void ResetAfterPlayerDeath(bool forceNow = false);
-
-	// ★ 追加：クリア後（や任意のタイミング）に、プレイヤー/敵を初期スポーンへ戻すだけの共通関数
-	void ResetActorsToSpawn();
-
-	//================================
-	// パーティクル
-	//================================
-
-	// --------------- CLEAR パーティクル ---------------
-	struct ClearParticle {
-		KamataEngine::WorldTransform* wt = nullptr;
-		KamataEngine::Vector3 vel{}; // x,y を使用（Zは固定）
-		float life = 0.0f;
-		float maxLife = 0.0f;
-	};
-
-	std::vector<ClearParticle> clearParticles_;
-
-	// 生成＆更新（実装は .cpp）
-	void SpawnClearBurst(int count, const KamataEngine::Vector3& center);
-	void UpdateClearParticles(float dt);
-
-	// 既存: Clear用パーティクル構造体や clearParticles_ がある前提
-
-	// ---- Clear用エミッタ（常時発生制御）----
-	struct ClearEmitter {
-		bool active = false;
-		float rate = 80.0f;                              // 1秒あたりの生成数（お好みで）
-		float accum = 0.0f;                              // 積算（小数を貯めて整数分だけ生成）
-		KamataEngine::Vector3 origin{0.0f, 0.0f, 10.0f}; // 画面中央付近（正射影ならz=10等）
-	};
-	ClearEmitter clearEmitter_;
-
-	// 画面を塗る用の 1x1 白テクスチャ（無ければ0のままでもOK）
-	uint32_t clearTexWhite_ = 0;
-	int screenW_ = 1280, screenH_ = 720; // 必要なら実取得に置換
-
-	// ゴール（タイル3）の位置
-	int goalTx_ = -1, goalTy_ = -1;
-	Goal* goal_ = nullptr;
-	uint32_t goalTex_ = 0;
-	// KamataEngine::Model* modelBlockGoals_ = nullptr;
-	KamataEngine::Sprite* titleSprite_ = nullptr;
-	KamataEngine::Sprite* clearSprite_ = nullptr;
-
-	// 背景
-	KamataEngine::Sprite* bgSprite_ = nullptr;
-	uint32_t bgTex_ = 0;
-
-	// ダストモデル用メンバを追加
-	std::unique_ptr<KamataEngine::Model> dustModel_;
-
-	//======================================
-	// タイル情報
-	//======================================
-
-	// マップチップ情報（ID配列）
-	ge3::stage::StageEditor editor_;
-
-	std::vector<KamataEngine::Model*> tileModels_;
-
-	// 1マスの幅（X/Z方向）
-	float cellSize_ = 32.0f;
-
-	// タイル描画で使い回すWT（破棄タイミングをフレーム後にする）
-	KamataEngine::WorldTransform tileWT_; // ←追加
-
-	// GameScene.h
-	struct TileItem {
-		int id, x, y;
-	};
-
-	std::vector<TileItem> tiles_;
-	std::vector<KamataEngine::WorldTransform> wts_;
-	// id→高さ (Y) の対応表。必要な最大ID+1ぶん確保
-	std::vector<float> tileHeightLUT_;
+	// 描画WTを座標に反映
+	void SyncWT_Tank(TankXZ& t);
+	// ↓ 既存宣言の置き換え/追加
+	// 新:
+	void MakeWallWT(const BoxXZ& w, KamataEngine::WorldTransform& out);
+	// 参照渡しでWTを更新する関数（値返し禁止）
+	void BuildWallWT(const BoxXZ& w, KamataEngine::WorldTransform& out);
+	void DrawCube(const KamataEngine::WorldTransform& wt, const KamataEngine::Camera& cam);
 };

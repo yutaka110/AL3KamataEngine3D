@@ -125,69 +125,12 @@ bool StageEditor::LoadCSV(const char* p) {
 	return true;
 }
 
-// ===== Undo/Redo 実装 =====
-void ge3::stage::StageEditor::ApplySet(int x, int y, int id) {
-	if (!InRange(x, y))
-		return;
-	const int cur = Get(x, y);
-	if (cur == id)
-		return; // 変化なしは履歴を積まない
-
-	// 履歴を積む（新規編集で Redo は破棄）
-	undoStack_.push_back({x, y, cur, id});
-	redoStack_.clear();
-
-	// 反映
-	tiles[Index(x, y)] = id;
-}
-
-void ge3::stage::StageEditor::Undo() {
-	if (undoStack_.empty())
-		return;
-	EditDiff d = undoStack_.back();
-	undoStack_.pop_back();
-
-	// 現在値を new として Redo 側に退避（往復に強い）
-	const int cur = Get(d.x, d.y);
-	redoStack_.push_back({d.x, d.y, cur, d.oldId});
-
-	// 旧値を反映
-	tiles[Index(d.x, d.y)] = d.oldId;
-}
-
-void ge3::stage::StageEditor::Redo() {
-	if (redoStack_.empty())
-		return;
-	EditDiff d = redoStack_.back();
-	redoStack_.pop_back();
-
-	// 現在値を old として Undo 側に退避
-	const int cur = Get(d.x, d.y);
-	undoStack_.push_back({d.x, d.y, cur, d.newId});
-
-	// 新値を反映
-	tiles[Index(d.x, d.y)] = d.newId;
-}
-
-void ge3::stage::StageEditor::ClearHistory() {
-	undoStack_.clear();
-	redoStack_.clear();
-}
-
-
 // ========== ImGui エディタ ==========
 void StageEditor::UpdateEditorUI(const char* windowTitle) {
-	windowTitle; // 未使用回避
-#ifdef _DEBUG
 	if (!editMode)
 		return;
 
-	// タイトルバーでのみ移動（中身ドラッグでウィンドウが動かない）
-	ImGuiIO& io = ImGui::GetIO();
-	// io.ConfigWindowsMoveFromTitleBarOnly = true;
-	io.KeyRepeatDelay = 0.35f; // 押し始めからの待ち時間（初回→2回目）
-	io.KeyRepeatRate = 0.05f;  // 以降の間隔（小さいほど速い）
-if	ImGui::Begin(windowTitle, &editMode);
+	ImGui::Begin(windowTitle, &editMode);
 
 	// ---- ツールバー ----
 	ImGui::Text("Map: %dx%d  cell=%.2f", width, height, cellSize);
@@ -205,6 +148,7 @@ if	ImGui::Begin(windowTitle, &editMode);
 		if (paletteMax < 1)
 			paletteMax = 1;
 	}
+	// IDボタンを横並びで
 	for (int i = 1; i <= paletteMax; ++i) {
 		if (i % 10 != 1)
 			ImGui::SameLine();
@@ -227,55 +171,36 @@ if	ImGui::Begin(windowTitle, &editMode);
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Clear")) {
-		ClearAll(0); /* ClearHistory(); 任意 */
+		ClearAll(0);
 	}
-
-	// Undo/Redo ボタン（長押しで連続実行）
-	ImGui::SameLine();
-	ImGui::PushButtonRepeat(true); // ★ 長押しで Button() が連続 true になる
-	if (ImGui::Button("Undo (Ctrl+Z)"))
-		Undo();
-	ImGui::SameLine();
-	if (ImGui::Button("Redo (Ctrl+Y)"))
-		Redo();
-	ImGui::PopButtonRepeat(); // ★ 忘れずに
 
 	ImGui::Separator();
 
 	// ---- キャンバス ----
-	const float cellPx = 24.0f; // UI上の1セルサイズ
-	const float needW = width * cellPx + 1.0f;
-	const float needH = height * cellPx + 1.0f;
-	const ImVec2 minCanvas((float)std::max(180.0f, needW), (float)std::max(180.0f, needH));
+	const float cellPx = 24.0f; // 見た目の1セルサイズ（UI上）
+	const ImVec2 canvasSize(std::max(180.0f, width * cellPx + 1.0f), std::max(180.0f, height * cellPx + 1.0f));
 
 	ImGui::Text("Canvas:");
-	ImGuiWindowFlags childFlags = ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar;
-	ImGui::BeginChild("##StageCanvas", minCanvas, true, childFlags);
-
+	ImGui::BeginChild("##StageCanvas", canvasSize, true, ImGuiWindowFlags_NoScrollWithMouse);
 	ImDrawList* draw = ImGui::GetWindowDrawList();
-	ImVec2 canvasPos = ImGui::GetCursorScreenPos(); // 左上（スクリーン座標）
-	ImVec2 avail = ImGui::GetContentRegionAvail();
-	ImVec2 canvasSize = ImVec2((avail.x < minCanvas.x) ? minCanvas.x : avail.x, (avail.y < minCanvas.y) ? minCanvas.y : avail.y);
+	const ImVec2 origin = ImGui::GetCursorScreenPos();
 
-	// 背景（+枠線）※ ImVec2 の加算は自前で
-	ImVec2 bg_p0 = canvasPos;
-	ImVec2 bg_p1 = ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y);
-	draw->AddRectFilled(bg_p0, bg_p1, IM_COL32(30, 30, 30, 255));
-	draw->AddRect(bg_p0, bg_p1, IM_COL32(80, 80, 80, 255)); // ← 色引数が必須
+	// 背景
+	draw->AddRectFilled(origin, ImVec2(origin.x + canvasSize.x, origin.y + canvasSize.y), IM_COL32(30, 30, 30, 255));
 
 	// グリッド
 	if (showGrid) {
 		for (int x = 0; x <= width; ++x) {
-			float xi = canvasPos.x + x * cellPx;
-			draw->AddLine(ImVec2(xi, canvasPos.y), ImVec2(xi, canvasPos.y + height * cellPx), IM_COL32(60, 60, 60, 255));
+			float xi = origin.x + x * cellPx;
+			draw->AddLine(ImVec2(xi, origin.y), ImVec2(xi, origin.y + height * cellPx), IM_COL32(60, 60, 60, 255));
 		}
 		for (int y = 0; y <= height; ++y) {
-			float yi = canvasPos.y + y * cellPx;
-			draw->AddLine(ImVec2(canvasPos.x, yi), ImVec2(canvasPos.x + width * cellPx, yi), IM_COL32(60, 60, 60, 255));
+			float yi = origin.y + y * cellPx;
+			draw->AddLine(ImVec2(origin.x, yi), ImVec2(origin.x + width * cellPx, yi), IM_COL32(60, 60, 60, 255));
 		}
 	}
 
-	// id→色（視認用）
+	// id→色（視認用の適当なテーブル）
 	auto colorForId = [](int id) -> ImU32 {
 		if (id == 0)
 			return IM_COL32(0, 0, 0, 0);
@@ -286,95 +211,68 @@ if	ImGui::Begin(windowTitle, &editMode);
 		return tbl[id % (sizeof(tbl) / sizeof(tbl[0]))];
 	};
 
-	// タイル塗り
+	// セル塗り
 	for (int y = 0; y < height; ++y) {
 		for (int x = 0; x < width; ++x) {
 			int id = tiles[Index(x, y)];
 			if (id == 0)
 				continue;
-			ImVec2 p0(canvasPos.x + x * cellPx, canvasPos.y + y * cellPx);
-			ImVec2 p1(canvasPos.x + (x + 1) * cellPx - 1.0f, canvasPos.y + (y + 1) * cellPx - 1.0f);
+			ImVec2 p0(origin.x + x * cellPx, origin.y + y * cellPx);
+			ImVec2 p1(origin.x + (x + 1) * cellPx - 1, origin.y + (y + 1) * cellPx - 1);
 			draw->AddRectFilled(p0, p1, colorForId(id));
 		}
 	}
 
-	// InvisibleButton で入力をこの領域に束縛（※ SetItemUsingMouseWheel は古い版には無いので未使用）
-	ImGui::SetCursorScreenPos(canvasPos);
-	ImGui::InvisibleButton("##StageCanvasBtn", canvasSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
-	bool hovered = ImGui::IsItemHovered();
-	bool activeL = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left);
-	bool activeR = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Right);
-
-	// ホバー／ドラッグ編集
+	// ホバー＆ドラッグ編集
 	hoverX = hoverY = -1;
-	if (hovered || activeL || activeR) {
-		ImVec2 mouse = io.MousePos;
-		bool inside = (mouse.x >= canvasPos.x && mouse.x < canvasPos.x + width * cellPx && mouse.y >= canvasPos.y && mouse.y < canvasPos.y + height * cellPx);
-		if (inside) {
-			int mx = (int)((mouse.x - canvasPos.x) / cellPx);
-			int my = (int)((mouse.y - canvasPos.y) / cellPx);
-			if (InRange(mx, my)) {
-				hoverX = mx;
-				hoverY = my;
+	const ImVec2 mouse = ImGui::GetIO().MousePos;
+	const bool inside = (mouse.x >= origin.x && mouse.x < origin.x + width * cellPx && mouse.y >= origin.y && mouse.y < origin.y + height * cellPx);
 
-				// ハイライト
-				ImVec2 hp0(canvasPos.x + mx * cellPx, canvasPos.y + my * cellPx);
-				ImVec2 hp1(canvasPos.x + (mx + 1) * cellPx - 1.0f, canvasPos.y + (my + 1) * cellPx - 1.0f);
-				draw->AddRect(hp0, hp1, IM_COL32(255, 255, 255, 180), 0.0f, 0, 2.0f);
+	if (inside) {
+		int mx = (int)((mouse.x - origin.x) / cellPx);
+		int my = (int)((mouse.y - origin.y) / cellPx);
+		if (InRange(mx, my)) {
+			hoverX = mx;
+			hoverY = my;
+			// ハイライト
+			ImVec2 p0(origin.x + mx * cellPx, origin.y + my * cellPx);
+			ImVec2 p1(origin.x + (mx + 1) * cellPx - 1, origin.y + (my + 1) * cellPx - 1);
+			draw->AddRect(p0, p1, IM_COL32(255, 255, 255, 180), 0.0f, 0, 2.0f);
 
-				// スポイト（中クリック / Ctrl+右 / Alt+右 / 'E'）
-				bool wantPick =
-				    ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && (io.KeyCtrl || io.KeyAlt)) || ImGui::IsKeyPressed(ImGuiKey_E, false);
-				if (wantPick) {
-					int id = Get(mx, my);
-					selectedId = (id >= 0) ? id : 0;
-				}
+			// 左ボタン：ペイント、右ボタン：消しゴム
+			if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+				leftDragPainting = true;
+			if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+				rightDragErasing = true;
 
-				// ドラッグ開始/終了（スポイト修飾除く）
-				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-					leftDragPainting = true;
-				if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-					rightDragErasing = true;
-				if (leftDragPainting && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
-					leftDragPainting = false;
-				if (rightDragErasing && !ImGui::IsMouseDown(ImGuiMouseButton_Right))
-					rightDragErasing = false;
-
-				// 編集（履歴付き）
-				if (leftDragPainting)
-					ApplySet(mx, my, selectedId);
-				if (rightDragErasing && !io.KeyCtrl && !io.KeyAlt)
-					ApplySet(mx, my, 0);
-			}
-		} else {
-			if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+			if (leftDragPainting && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
 				leftDragPainting = false;
-			if (!ImGui::IsMouseDown(ImGuiMouseButton_Right))
+			if (rightDragErasing && !ImGui::IsMouseDown(ImGuiMouseButton_Right))
 				rightDragErasing = false;
+
+			if (leftDragPainting)
+				Set(mx, my, selectedId);
+			if (rightDragErasing)
+				Set(mx, my, 0);
 		}
+	} else {
+		// キャンバス外でボタンを離したらドラッグ解除
+		if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+			leftDragPainting = false;
+		if (!ImGui::IsMouseDown(ImGuiMouseButton_Right))
+			rightDragErasing = false;
 	}
 
 	ImGui::EndChild();
 
-	// 補助表示 & ショートカット
+	// 補助表示
 	ImGui::Spacing();
 	if (hoverX >= 0)
 		ImGui::Text("Hover: (%d,%d)  id=%d", hoverX, hoverY, Get(hoverX, hoverY));
 	else
 		ImGui::TextUnformatted("Hover: (-,-)");
 
-	bool ctrl = io.KeyCtrl;
-	bool shift = io.KeyShift;
-	// ★ 第2引数を true にするとオートリピート（長押し）で複数回 true が返る
-	if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, /*repeat=*/true) && !shift) {
-		Undo();
-	}
-	if ((ctrl && ImGui::IsKeyPressed(ImGuiKey_Y, /*repeat=*/true)) || (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_Z, /*repeat=*/true))) {
-		Redo();
-	}
-
 	ImGui::End();
-#endif
 }
 
 } // namespace stage
