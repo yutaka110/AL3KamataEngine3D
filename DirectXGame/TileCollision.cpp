@@ -24,8 +24,10 @@ void ResolvePlayerVsTilemap(Player& player, const TileField& tf) {
 	Vector3 pos = wt.translation_;
 
 	const Vector3 ph = PlayerHalfExtents();
-	const float BHX = tf.pitchX * 0.5f; // ★ 見た目の並びと一致させる
-	const float BHY = tf.pitchY * 0.5f;
+	//const float BHX = tf.pitchX * 0.5f; // ★ 見た目の並びと一致させる
+	//const float BHY = tf.pitchY * 0.5f;
+	const float BHX = tf.halfX; // ★ 当たり＝見た目キューブの半径
+	const float BHY = tf.halfY;
 
 	// 一旦非接地。Y解決時に立て直す
 	player.SetGrounded(false);

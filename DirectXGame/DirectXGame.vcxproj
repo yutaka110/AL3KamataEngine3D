@@ -106,8 +106,16 @@
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="bullet.cpp" />
+    <ClCompile Include="ClearScene.cpp" />
     <ClCompile Include="Enemy.cpp" />
     <ClCompile Include="GameScene.cpp" />
+    <ClCompile Include="game\src\player\Player.cpp" />
+    <ClCompile Include="game\src\player\Player_Input.cpp" />
+    <ClCompile Include="game\src\player\PlayerPhysics.cpp" />
+    <ClCompile Include="game\src\player\PlayerState.cpp" />
+    <ClCompile Include="game\src\player\PlayerTypes.cpp" />
+    <ClCompile Include="Goal.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapLoader.cpp" />
     <ClCompile Include="player.cpp" />
@@ -192,12 +200,20 @@
     <None Include="Resources\shaders\Sprite.hlsli" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="bullet.h" />
+    <ClInclude Include="ClearScene.h" />
     <ClInclude Include="Enemy.h" />
     <ClInclude Include="GameScene.h" />
+    <ClInclude Include="game\include\player\Player.h" />
+    <ClInclude Include="game\include\player\PlayerConfig.h" />
+    <ClInclude Include="game\include\player\Player_Input.h" />
+    <ClInclude Include="game\include\player\PlayerPhysics.h" />
+    <ClInclude Include="game\include\player\PlayerState.h" />
+    <ClInclude Include="game\include\player\PlayerTypes.h" />
+    <ClInclude Include="Goal.h" />
     <ClInclude Include="IScene.h" />
     <ClInclude Include="MapLoader.h" />
     <ClInclude Include="matrix.h" />
-    <ClInclude Include="player.h" />
     <ClInclude Include="SceneID.h" />
     <ClInclude Include="Skydome.h" />
     <ClInclude Include="stage\include\math\MathUtil.h" />

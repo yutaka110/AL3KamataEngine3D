@@ -71,7 +71,14 @@ void GameScene::Initialize() {
 	selSlot_ = 0;
 	execStep_ = execMini_ = 0;
 
-	
+	// GameScene.cpp の Initialize 内
+	// タイトル用スプライト
+	titleSprite_ = Sprite::Create(TextureManager::Load("title.png"), {0.0f, 0.0f}); // 画面中央（例）
+
+	// クリア用スプライト
+	clearSprite_ = Sprite::Create(TextureManager::Load("clear.png"), {0.0f, 0.0f});
+
+
 
 
 	// id→モデル対応を準備（あなたの資産に合わせて）
@@ -630,4 +637,176 @@ void GameScene::BuildWallWT(const BoxXZ& w, KamataEngine::WorldTransform& out) {
 	out.translation_ = {cx, Y_LIFT, cz};
 	out.scale_ = {sx, 1.0f, sz};
 	out.TransferMatrix();
+}
+
+void GameScene::ResetAfterPlayerDeath(bool forceNow) {
+	// 状態をゲームへ戻す
+	phase_ = ScenePhase::Game;
+	deathElapsed_ = 0.0f;
+
+	// 弾やタイマを初期化
+	bullets_.clear();
+	fireTimer_ = 0.0f;
+
+	if (!forceNow) {
+		// 例：最低演出時間が経っていなければ return
+		if (deathElapsed_ < deathMinTime_)
+			return;
+	}
+
+	// プレイヤーを初期位置へ
+	{
+		auto& wt = player_->EditWorldTransform();
+		wt.translation_ = playerSpawn_;
+		wt.rotation_ = {0, 0, 0}; // 必要なら角度もリセット
+		wt.matWorld_ = MakeAffine(wt.scale_, wt.rotation_, wt.translation_);
+		wt.TransferMatrix();
+	}
+
+	// 敵も全員初期位置へ（速度なども適宜初期化）
+	for (size_t i = 0; i < enemies_.size(); ++i) {
+		auto& e = enemies_[i];
+		auto& wt = e->EditWorldTransform();
+		if (i < enemySpawns_.size()) {
+			wt.translation_ = enemySpawns_[i];
+		}
+		// 進行方向リセット（左右反転ロジックに備えて 0 に）
+		e->EditVelocity().x = 0.0f;
+		e->EditVelocity().y = 0.0f;
+		wt.rotation_ = {0, 0, 0};
+		wt.matWorld_ = MakeAffine(wt.scale_, wt.rotation_, wt.translation_);
+		wt.TransferMatrix();
+	}
+
+	// Death演出は消しておく（保険）
+	for (auto& dp : deathParticles_) {
+		delete dp.wt;
+		dp.wt = nullptr;
+	}
+	deathParticles_.clear();
+
+	// カメラやスカイドームは既存処理に任せる
+}
+
+void GameScene::SpawnClearBurst(int count, const KamataEngine::Vector3& center) {
+	clearParticles_.reserve(clearParticles_.size() + count);
+
+	for (int i = 0; i < count; ++i) {
+		ClearParticle p{};
+
+		// WorldTransform を個別に持つ（死亡時パーティクルと同じ作法）
+		p.wt = new KamataEngine::WorldTransform();
+		p.wt->Initialize();
+
+		// 初期位置：center 付近に少しばらつき
+		p.wt->translation_ = {center.x + frand(-0.5f, +0.5f), center.y + frand(-0.5f, +0.5f), center.z};
+
+		// 初期スケール：ちいさめの紙片
+		float s = frand(0.15f, 0.35f);
+		p.wt->scale_ = {s, s, s};
+
+		// 速度：放射＋上向き少し（紙吹雪っぽく）
+		p.vel.x = frand(-3.5f, +3.5f);
+		p.vel.y = frand(+2.0f, +6.0f);
+
+		// 寿命
+		p.maxLife = frand(0.9f, 1.6f);
+		p.life = p.maxLife;
+
+		// 反映
+		p.wt->matWorld_ = MakeAffine(p.wt->scale_, p.wt->rotation_, p.wt->translation_);
+		p.wt->TransferMatrix();
+
+		clearParticles_.push_back(p);
+	}
+}
+
+void GameScene::UpdateClearParticles(float dt) {
+	const float gravity = -9.8f * 0.35f; // 軽めの重力
+	const float dampVel = 0.985f;        // 速度減衰
+	// const float dampRot = 0.97f;         // （使わないなら無視してOK）
+
+	for (auto& p : clearParticles_) {
+		if (!p.wt)
+			continue;
+		p.life -= dt;
+		if (p.life <= 0.0f)
+			continue;
+
+		// 物理
+		p.vel.y += gravity * dt;
+		p.vel.x *= dampVel;
+
+		// 位置更新（XYのみ）
+		p.wt->translation_.x += p.vel.x * dt;
+		p.wt->translation_.y += p.vel.y * dt;
+
+		// 経過によってスケールを少し縮める
+		float t = (p.life > 0.0f && p.maxLife > 0.0f) ? (p.life / p.maxLife) : 0.0f;
+		float s = (std::max)(0.0f, t) * 0.35f; // 初期0.35前後に合わせる
+		p.wt->scale_ = {s, s, s};
+
+		p.wt->matWorld_ = MakeAffine(p.wt->scale_, p.wt->rotation_, p.wt->translation_);
+		p.wt->TransferMatrix();
+	}
+
+	// 死亡したものをまとめて破棄（メモリ掃除）
+	// life<=0 または wt==nullptr を削除
+	if (!clearParticles_.empty()) {
+		std::vector<ClearParticle> alive;
+		alive.reserve(clearParticles_.size());
+		for (auto& p : clearParticles_) {
+			if (p.life > 0.0f && p.wt) {
+				alive.push_back(p);
+			} else {
+				if (p.wt) {
+					delete p.wt;
+				}
+			}
+		}
+		clearParticles_.swap(alive);
+	}
+}
+
+void GameScene::ResetActorsToSpawn() {
+	// 弾・タイマ・演出の軽い初期化
+	bullets_.clear();
+	fireTimer_ = 0.0f;
+
+	// Death/ Clear パーティクル類のクリーンアップ（保険）
+	for (auto& dp : deathParticles_) {
+		delete dp.wt;
+		dp.wt = nullptr;
+	}
+	deathParticles_.clear();
+
+	for (auto& p : clearParticles_) {
+		if (p.wt)
+			delete p.wt;
+	}
+	clearParticles_.clear();
+
+	// プレイヤーをスポーンへ
+	{
+		auto& wt = player_->EditWorldTransform();
+		wt.translation_ = playerSpawn_;
+		wt.rotation_ = {0, 0, 0};
+		wt.matWorld_ = MakeAffine(wt.scale_, wt.rotation_, wt.translation_);
+		wt.TransferMatrix();
+	}
+
+	// 敵もスポーンへ
+	for (size_t i = 0; i < enemies_.size(); ++i) {
+		auto& e = enemies_[i];
+		auto& wt = e->EditWorldTransform();
+
+		if (i < enemySpawns_.size()) {
+			wt.translation_ = enemySpawns_[i];
+		}
+		e->EditVelocity().x = 0.0f;
+		e->EditVelocity().y = 0.0f;
+		wt.rotation_ = {0, 0, 0};
+		wt.matWorld_ = MakeAffine(wt.scale_, wt.rotation_, wt.translation_);
+		wt.TransferMatrix();
+	}
 }

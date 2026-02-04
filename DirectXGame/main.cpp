@@ -6,7 +6,7 @@ using namespace KamataEngine;
 
 DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
-	KamataEngine::Initialize(L"LE2B_17_タケイ_ユタカ_AL3");
+	KamataEngine::Initialize(L"LE2B_17_タケイ_ユタカ_見透しの舞台");
 	
 	//ゲームシーンのインスタンスを生成
 	GameScene* gameScene = new GameScene();

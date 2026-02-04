@@ -7,8 +7,8 @@ TitleScene::~TitleScene() { delete sprite_; }
 
 void TitleScene::Initialize() {
 	// 適当な画像を resources に置いておく（無ければ白板表示でもOK）
-	tex_ = TextureManager::Load("mario.jpg");                           // 無ければフォールバックでも良い
-	sprite_ = Sprite::Create(tex_, {640.0f - 256.0f, 360.0f - 128.0f}); // 例: 512x256想定
+	tex_ = TextureManager::Load("title.png");                           // 無ければフォールバックでも良い
+	sprite_ = Sprite::Create(tex_, {0.0f, 0.0f}); // 例: 512x256想定
 	finished_ = false;
 }
 
